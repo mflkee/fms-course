@@ -148,6 +148,7 @@ git push origin main
 | Проверка синтаксиса PlantUML | `plantuml -checkonly <file>` | `plantuml -checkonly lab3-sequence-diagrams/diagrams/*.puml` |
 | Рендер всех диаграмм лаб. 3–4 | `plantuml` | `plantuml -tpng -charset UTF-8 lab3-sequence-diagrams/diagrams/*.puml lab4-communication-diagrams/diagrams/*.puml` |
 | Диаграммы Mermaid | GitHub рендерит ```` ```mermaid ```` в Markdown; локально — VS Code / `mmdc` | `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium npx -y @mermaid-js/mermaid-cli -i in.mmd -o out.png` |
+| Перенос длинных подписей в `.puml` (чтобы диаграммы не были «лентами») | `tools/wrap_puml.py` | `python3 tools/wrap_puml.py lab3-sequence-diagrams/diagrams 90 && plantuml -tpng lab3-sequence-diagrams/diagrams/*.puml` |
 
 ## Прогресс
 
