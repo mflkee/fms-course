@@ -1,0 +1,43 @@
+@startuml 02-p01-alternativa-dubl
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П01 — альтернативный сценарий 1а («У ИГ уже учтён действующий патент»)
+' Проверка: plantuml -checkonly 02-p01-alternativa-dubl.puml ; рендер: plantuml -tpng 02-p01-alternativa-dubl.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П01, альтернатива 1а. Обнаружен учтённый действующий патент
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+participant "Система «Действия после получения патента»" as SYS
+
+CIT -> SYS : 1. зарегистрироватьПатент(данныеПатента, сканПатента)
+SYS --> CIT : 2. ПредупреждениеОДублировании{идУчтенногоПатента, серия, номер, датаВыдачи, срокДействия,\nстатус}
+note over SYS
+  Ветвь 1 альтернативы: ИГ отменяет регистрацию — карточка не создаётся, состояние
+  подсистемы не изменяется, операция завершается без результата.
+end note
+CIT -> SYS : 3. пометитьПатентАрхивным(идПрежнегоПатента, основание = «аннулирован / истёк / выдан\nновый»)
+SYS --> CIT : 4. Патент{статус = «архивный», основание, датаИзменения}
+CIT -> SYS : 5. зарегистрироватьПатент(данныеПатента, сканПатента)
+SYS --> CIT : 6. РезультатРегистрацииПатента{идПатента, статус = «действует»,\nдатаТрудоустройстваНеПозднее, контрольныеТочки[4]}
+note over SYS
+  Инвариант ИНВ-6 («у ИГ не более одного действующего патента») обеспечивается именно этой
+  последовательностью: система не допускает двух действующих патентов, а архивный статус
+  прежнего патента сохраняет историю для споров и отчётности (П07).
+end note
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

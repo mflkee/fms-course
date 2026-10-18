@@ -1,0 +1,42 @@
+@startuml 06-p02-alternativa-prosrochka-sroka
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П02 — альтернативный сценарий 2а («Срок трудоустройства истёк или истекает сегодня»)
+' Проверка: plantuml -checkonly 06-p02-alternativa-prosrochka-sroka.puml ; рендер: plantuml -tpng 06-p02-alternativa-prosrochka-sroka.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П02, альтернатива 2а. Просрочка срока трудоустройства
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+actor "Работодатель / заказчик по ГПХ (A2)" as EMP
+participant "Система «Действия после получения патента»" as SYS
+
+EMP -> SYS : 1. получитьСведенияОпатенте(серия, номер)
+SYS --> EMP : 2. СведенияОпатенте{остатокСрокаТрудоустройства = 0, признакПросрочки = истина}
+CIT -> SYS : 3. заключитьДоговор(идПатента, данныеДоговора, файлПодписанногоДоговора)
+SYS --> CIT : 4. ПредупреждениеОПросрочке{срок = «истёк», последствия = [«риск аннулирования патента\n(ИГ)», «административная ответственность работодателя»]}
+SYS -> EMP : 5. предупреждениеОПросрочке(идДоговора, последствия)
+SYS --> CIT : 6. Договор{идДоговора, статус = «заключён», признакПросрочки = истина}
+SYS -> SYS : 7. пересчитатьСрокиПатента(идПатента)
+note over SYS
+  Просроченная точка становится критической записью и попадает в сводный реестр (П07), где
+  администратор видит её без дополнительной фильтрации (альтернатива *а П07). Инцидент
+  отдельным классом не моделируется: в модели лаб. 2 такой сущности нет, а роль «инцидента»
+  выполняет просроченная критическая контрольная точка.
+end note
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

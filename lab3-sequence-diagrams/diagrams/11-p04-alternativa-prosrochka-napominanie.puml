@@ -1,0 +1,49 @@
+@startuml 11-p04-alternativa-prosrochka-napominanie
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П04 — альтернативный сценарий 4а («Исполнитель не реагирует на напоминания»)
+' Проверка: plantuml -checkonly 11-p04-alternativa-prosrochka-napominanie.puml ; рендер: plantuml -tpng 11-p04-alternativa-prosrochka-napominanie.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П04, альтернатива 4а. Просрочка срока и эскалация
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+actor "Работодатель / заказчик по ГПХ (A2)" as EMP
+participant "Система «Действия после получения патента»" as SYS
+
+SYS -> SYS : 1. пересчитатьСрокиПатента(идПатента)
+note over SYS
+  Сводка пересчёта: точка «заключить договор» — остаток 1 день, статус «открыта»; договор и
+  уведомление МВД не зарегистрированы.
+end note
+SYS -> CIT : 2. Напоминание{вид = «заключить_договор», канал = «личный_кабинет», остаток = «1 день»,\nкритическая = истина}
+note over SYS
+  Исполнитель не реагирует: за отведённый срок точка не закрыта ни договором (П02), ни
+  уведомлением (П03).
+end note
+SYS -> EMP : 3. Напоминание{вид = «направить_уведомление», канал = «email», уровень = «эскалация»}
+SYS -> SYS : 4. зафиксироватьНарушениеСрока(идТочки, датаОбнаружения)
+note over SYS
+  Контрольная точка переведена в статус «просрочена» (признак критичности — истина), факт
+  нарушения сохранён в истории с датой обнаружения. Отдельного класса «инцидент» в модели
+  лаб. 2 нет: роль инцидента выполняет просроченная критическая точка, которую видит
+  администратор в реестре (П07).
+end note
+SYS -> CIT : 5. предупреждениеОПоследствиях(риск = «аннулирование патента», основание =\n«непредставление уведомления в срок»)
+SYS -> EMP : 6. предупреждениеОПоследствиях(риск = «административная ответственность за непредставление\nуведомления»)
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

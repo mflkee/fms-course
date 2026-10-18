@@ -1,0 +1,45 @@
+@startuml 19-p07-alternativa-vygruzka-za-period
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П07 — альтернативные сценарии 2а, 2б и 6а («Выгрузка реестра за период»)
+' Проверка: plantuml -checkonly 19-p07-alternativa-vygruzka-za-period.puml ; рендер: plantuml -tpng 19-p07-alternativa-vygruzka-za-period.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П07, альтернативы 2а, 2б, 6а. Выгрузка реестра за период
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Администратор системы (A8)" as ADMIN
+participant "Система «Действия после получения патента»" as SYS
+
+ADMIN -> SYS : 1. сформироватьРеестр(параметры = {период = «01.07.2026–30.09.2026», регион})
+SYS --> ADMIN : 2. ОшибкаВыборки{«по заданным параметрам записей нет»} — либо\nПредупреждениеОбОбъёме{записей = 148000, «выборка слишком велика для выгрузки»}
+note over SYS
+  Предлагается расширить период или изменить фильтры. Для больших выборок вместо полного
+  списка формируется агрегированная сводка (по регионам, статусам, наличию просрочек).
+end note
+ADMIN -> SYS : 3. сформироватьРеестр(параметры = {период = «01.07.2026–31.12.2026», регион, агрегация =\n«по регионам»})
+SYS --> ADMIN : 4. РеестрПатентов{агрегированнаяСводка, срез, критическихЗаписей}
+ADMIN -> SYS : 5. выгрузитьРеестр(идРеестра, формат = «PDF», обезличивание = ложь)
+SYS --> ADMIN : 6. ОтказВВыгрузке{причина = «нет прав на выгрузку персональных данных»}
+ADMIN -> SYS : 7. выгрузитьРеестр(идРеестра, формат = «PDF», обезличивание = истина)
+SYS --> ADMIN : 8. ФайлВыгрузки{формат = «PDF», признакОбезличивания = истина}
+note over SYS
+  Обе попытки выгрузки (отказ и успешная обезличенная) зафиксированы в журнале аудита.
+  Выгрузка во внешние системы (МВД, ФНС) не выполняется: отчёт служебный, внутренний — это
+  открытый вопрос П07 в лаб. 1.
+end note
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

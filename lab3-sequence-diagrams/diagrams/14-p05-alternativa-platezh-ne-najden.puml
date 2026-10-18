@@ -1,0 +1,46 @@
+@startuml 14-p05-alternativa-platezh-ne-najden
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П05 — альтернативные сценарии 3а и 3б («Платёж не найден / сумма меньше установленной»)
+' Проверка: plantuml -checkonly 14-p05-alternativa-platezh-ne-najden.puml ; рендер: plantuml -tpng 14-p05-alternativa-platezh-ne-najden.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П05, альтернативы 3а и 3б. Платёж не подтверждён
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+participant "ФНС России (A6)" as FNS
+participant "Система «Действия после получения патента»" as SYS
+
+CIT -> SYS : 1. зарегистрироватьПлатёжНДФЛ(идПатента, данныеПлатежа, документ)
+SYS -> FNS : 2. запроситьПодтверждениеПоступления(инн, период, сумма)
+FNS --> SYS : 3. ПлатёжНеНайден{период, ожидаемаяСумма, причина = «ошибочно зачислен / не найден»}
+SYS --> CIT : 4. СтатусОплаты{период = «не покрыт», статус = «не_найден», недостающаяСумма}
+note over SYS
+  Открыта задача «подтвердить платёж»; ИГ предупреждён об аннулировании патента: перерыв в
+  уплате не восстанавливается задним числом (ИНВ-5). Сумма платежа должна соответствовать
+  стоимости патента в регионе на дату платежа (ИНВ-7).
+end note
+CIT -> SYS : 5. подтвердитьПлатёж(идПлатежа, источник = «ФНС / банк», документ = подтверждениеИзБанка)
+SYS --> CIT : 6. ПлатёжНДФЛ{статус = «подтверждён», источникВвода = «вручную, по документу»} +\nПатент{оплаченДо}
+note over SYS
+  Ветвь 3б (сумма меньше установленной): ИГ вносит доплату — период признаётся оплаченным
+  только после полной суммы по региону. Если доплата не внесена, период остаётся непокрытым
+  и через допустимый срок ожидания приводит к альтернативе 4а («неоплата» → прекращение
+  патента).
+end note
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

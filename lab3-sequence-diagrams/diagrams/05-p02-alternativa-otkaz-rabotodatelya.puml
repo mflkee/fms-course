@@ -1,0 +1,41 @@
+@startuml 05-p02-alternativa-otkaz-rabotodatelya
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П02 — альтернативный сценарий *а («Работодатель отказывается от сделки»)
+' Проверка: plantuml -checkonly 05-p02-alternativa-otkaz-rabotodatelya.puml ; рендер: plantuml -tpng 05-p02-alternativa-otkaz-rabotodatelya.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П02, альтернатива *а. Отказ работодателя от сделки
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+actor "Работодатель / заказчик по ГПХ (A2)" as EMP
+participant "Система «Действия после получения патента»" as SYS
+
+EMP -> SYS : 1. получитьСведенияОпатенте(серия, номер)
+SYS --> EMP : 2. СведенияОпатенте{статус, срокДействия, оплаченДо, регион, видДеятельности[],\nостатокСрокаТрудоустройства}
+CIT -> SYS : 3. заключитьДоговор(идПатента, данныеДоговора)
+SYS --> CIT : 4. ЧерновикДоговора{идЧерновика, статус = «черновик», ожидаетсяСогласиеСторон = [ИГ,\nработодатель]}
+EMP -> SYS : 5. отменитьДоговор(идЧерновикаДоговора, причина = «отказ работодателя после проверки\nдокументов»)
+SYS --> EMP : 6. Договор{идДоговора, статус = «черновик», отменён = истина, причина}
+SYS -> CIT : 7. уведомитьОбОтменеДоговора(идЧерновикаДоговора, причина)
+note over SYS
+  Контрольная точка «заключить договор» остаётся открытой: срок «2 месяца с даты выдачи
+  патента» продолжает идти (П04). При приближении срока точка становится критической, а при
+  истечении — просроченной (альтернатива 4а П04).
+end note
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

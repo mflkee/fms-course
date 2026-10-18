@@ -1,0 +1,47 @@
+@startuml 15-p05-alternativa-neoplata
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П05 — альтернативный сценарий 4а («Оплата отсутствует — патент прекращает действие»)
+' Проверка: plantuml -checkonly 15-p05-alternativa-neoplata.puml ; рендер: plantuml -tpng 15-p05-alternativa-neoplata.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П05, альтернатива 4а. Прекращение действия патента из-за неуплаты
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+actor "Работодатель / заказчик по ГПХ (A2)" as EMP
+participant "ФНС России (A6)" as FNS
+participant "Система «Действия после получения патента»" as SYS
+
+SYS -> SYS : 1. пересчитатьСрокиПатента(идПатента)
+note over SYS
+  Оплаченный период закончился, следующий авансовый платёж не поступил; допустимый период
+  ожидания (контрольный порог) истёк.
+end note
+SYS -> FNS : 2. запроситьСостояниеРасчётов(инн, период)
+FNS --> SYS : 3. СостояниеРасчётов{период = «не покрыт», задолженность, последнийПлатёж}
+SYS -> SYS : 4. зафиксироватьПрекращениеПатентаНеуплата(идПатента, датаОбнаружения)
+note over SYS
+  Патент переведён в статус «прекращён_неуплата» (оплаченДо остаётся для истории); все
+  связанные контрольные точки закрыты с основанием «прекращение патента (неуплата)»;
+  напоминания по патенте прекращены (ИНВ-9). Перерыв в уплате не восстанавливается задним
+  числом (ИНВ-5).
+end note
+SYS -> CIT : 5. предупреждение(«патент прекратил действие: необходимо покинуть РФ или оформить иной\nстатус», датаПрекращения)
+SYS -> EMP : 6. предупреждение(«патент недействителен, использование его для работы невозможно»)
+SYS -> FNS : 7. сведенияОпрекращенииПатента(идПатента, датаПрекращения)
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml

@@ -1,0 +1,42 @@
+@startuml 17-p06-alternativa-smena-rabotodatelya
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П06 — альтернативный сценарий 4а («Новый работодатель не найден») — смена работодателя
+' Проверка: plantuml -checkonly 17-p06-alternativa-smena-rabotodatelya.puml ; рендер: plantuml -tpng 17-p06-alternativa-smena-rabotodatelya.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П06, альтернатива 4а. Смена работодателя, новый работодатель не найден
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 90
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Работодатель / заказчик по ГПХ (A2)" as EMP
+actor "Иностранный гражданин (A1)" as CIT
+participant "ЕПГУ / Госуслуги (A4)" as EPGU
+participant "Система «Действия после получения патента»" as SYS
+
+EMP -> SYS : 1. прекратитьДоговор(идДоговора, датаПрекращения, основание = «истечение срока ГПХ»)
+SYS --> EMP : 2. Договор{статус = «прекращён», датаПрекращения, основание}
+SYS -> SYS : 3. пересчитатьСрокиПатента(идПатента)
+SYS --> CIT : 4. КонтрольнаяТочка{вид = «заключить_договор», статус = «открыта», остатокСрока,\nкритическая}
+SYS -> CIT : 5. предупреждение(«при пропуске срока патент может быть аннулирован», остатокСрока)
+SYS -> EPGU : 6. отправитьНапоминание(идПользователя, текст, канал = «ЕПГУ»)
+EPGU --> SYS : 7. СтатусНапоминания{доставлено, дата}
+note over SYS
+  Когда новый работодатель найден, выполняется заключитьДоговор (П02/П06), затем повторное
+  уведомление МВД (П03). Если до истечения срока новый договор не заключён, точка становится
+  просроченной (альтернатива 4а П04), а патент может быть аннулирован (альтернатива *б П06).
+end note
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A8) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml
