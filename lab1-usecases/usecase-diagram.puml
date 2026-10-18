@@ -1,0 +1,79 @@
+@startuml usecase-diagram
+' Диаграмма прецедентов: подсистема «Действия после получения патента» (тема 7 дорожной карты)
+' Рендер: plantuml usecase-diagram.puml   (или расширение PlantUML в IDE)
+' Проверка: plantuml -checkonly usecase-diagram.puml
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam nodesep 18
+skinparam ranksep 55
+skinparam usecase {
+  BackgroundColor #F7FBFF
+  BorderColor #4A6FA5
+}
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+
+' --- Основные исполнители ---
+actor "Иностранный\nгражданин (ИГ)" as CIT
+actor "Работодатель /\nзаказчик по ГПХ" as EMP
+actor "Администратор\nсистемы" as ADMIN
+
+' --- Вспомогательные исполнители ---
+actor "Сотрудник ОВМ МВД\n(территориальный орган)" as MVD
+actor "ЕПГУ (Госуслуги)" as EPGU
+actor "Почта России" as POST
+actor "ФНС России" as FNS
+actor "Банк" as BANK
+
+rectangle "Подсистема «Действия после получения патента»" as SYS {
+  usecase "01. Учёт выданного патента\nи постановка сроков" as UC01
+  usecase "02. Заключение трудового\nдоговора или ГПХ" as UC02
+  usecase "03. Уведомление МВД\nо трудовой деятельности" as UC03
+  usecase "04. Контроль срока\nтрудоустройства и напоминания" as UC04
+  usecase "05. Учёт НДФЛ и контроль\nсрока действия патента" as UC05
+  usecase "06. Прекращение договора,\nсмена работодателя" as UC06
+  usecase "07. Реестр и отчёт\nпо патентам" as UC07
+}
+
+' --- ассоциации ---
+CIT --> UC01
+CIT --> UC02
+CIT --> UC04
+CIT --> UC05
+
+EMP --> UC02
+EMP --> UC03
+EMP --> UC06
+
+ADMIN --> UC07
+
+MVD --> UC01
+MVD --> UC03
+MVD --> UC06
+
+EPGU --> UC01
+EPGU --> UC03
+EPGU --> UC04
+EPGU --> UC05
+
+POST --> UC03
+POST --> UC06
+
+FNS --> UC05
+FNS --> UC07
+
+BANK --> UC05
+
+' --- включения и расширения ---
+UC01 ..> UC04 : <<include>>
+UC06 ..> UC03 : <<include>>
+
+UC05 ..> UC01 : <<extend>>
+UC07 ..> UC01 : <<extend>>
+
+@enduml
