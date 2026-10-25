@@ -1,0 +1,10 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ISC", "FURB", "C4"]
+# B008: Depends()/Query() в значениях по умолчанию — штатный приём FastAPI.
+ignore = ["B008", "PYI041"]
+
+[lint.per-file-ignores]
+"tests/*" = ["E501"]
