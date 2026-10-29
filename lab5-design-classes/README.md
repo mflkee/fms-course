@@ -291,9 +291,6 @@ plantuml -tpng -charset UTF-8 lab5-design-classes/diagrams/*.puml
 
 # Mermaid: локальная проверка блоков из .md (рендеры — вне репозитория)
 PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium npx -y @mermaid-js/mermaid-cli -i in.mmd -o /tmp/out.png
-
-# Перенос длинных подписей (общий инструмент репозитория)
-python3 tools/wrap_puml.py lab5-design-classes/diagrams 80
 ```
 
 Результаты проверки на 25.10.2026:
