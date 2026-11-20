@@ -1,50 +1,20 @@
 @startuml usecase-diagram
-' Диаграмма прецедентов: подсистема «Действия после получения патента» (тема 7 дорожной карты)
-' 4 прецедента (П01–П04), 4 актора (A1–A4). Отношений include/extend нет:
-' прецеденты независимы, связь между ними — только через предусловия (см. usecase-diagram.md).
-' Рендер: plantuml usecase-diagram.puml   (или расширение PlantUML в IDE)
-' Проверка: plantuml -checkonly usecase-diagram.puml
-
-left to right direction
-skinparam packageStyle rectangle
-skinparam shadowing false
+' Лаб. 1: диаграмма прецедентов. Один актор, два прецедента.
+' Граница системы: система только собирает анкету и показывает дорожную карту.
 skinparam defaultFontName "DejaVu Sans"
-skinparam nodesep 34
-skinparam ranksep 70
+skinparam shadowing false
 skinparam usecase {
-  BackgroundColor #F7FBFF
+  BackgroundColor #F4F8FF
   BorderColor #4A6FA5
 }
-skinparam rectangle {
-  BackgroundColor #FFFFFF
-  BorderColor #333333
+
+actor "Иностранный\nгражданин" as IG
+
+rectangle "Система «Дорожная карта»" {
+  usecase "П1. Заполнить анкету" as P1
+  usecase "П2. Просмотреть\nдорожную карту" as P2
 }
 
-' --- Основные исполнители ---
-actor "Иностранный\nгражданин (ИГ)" as CIT
-actor "Работодатель /\nзаказчик по ГПХ" as EMP
-
-' --- Вспомогательные исполнители ---
-actor "Сотрудник ОВМ МВД\n(территориальный орган)" as MVD
-actor "ЕПГУ /\nПочта России" as CHANNEL
-
-rectangle "Подсистема «Действия после получения патента»" as SYS {
-  usecase "П01. Учесть\nвыданный патент" as UC01
-  usecase "П02. Заключить трудовой договор\nили договор ГПХ (7.1)" as UC02
-  usecase "П03. Уведомить МВД\nоб осуществлении\nтрудовой деятельности (7.2)" as UC03
-  usecase "П04. Контролировать срок\nтрудоустройства\nи напоминать" as UC04
-}
-
-' --- ассоциации ---
-CIT --> UC01
-CIT --> UC02
-CIT --> UC04
-
-EMP --> UC02
-EMP --> UC03
-EMP --> UC04
-
-MVD --> UC03
-CHANNEL --> UC03
-
+IG --> P1
+IG --> P2
 @enduml
