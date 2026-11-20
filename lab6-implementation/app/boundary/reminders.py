@@ -1,14 +1,38 @@
-"""Экран сроков (``ЭкранСроков``): операция 8 ``настроитьНапоминания``."""
+"""Экран сроков (``ЭкранСроков``): операция 8 и чтение напоминаний кабинета."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.boundary.deps import get_container
 from app.boundary.schemas import ReminderSettingsRequest
 from app.container import Container
 
 router = APIRouter(tags=["reminders"])
+
+
+@router.get("/reminders/due")
+def list_due_reminders(
+    citizen_id: str = Query(min_length=1),
+    container: Container = Depends(get_container),
+) -> dict:
+    """Актуальные напоминания для личного кабинета.
+
+    Напоминания не рассылаются. Запланированные напоминания, момент которых
+    наступил, помечаются «показано»; уже показанные возвращаются повторно, пока
+    точка открыта. Запрос меняет статус, но повторный вызов безопасен.
+    """
+    citizen = container.citizens.require(citizen_id)
+    reminders = container.reminder_service.show_due(citizen)
+    return {
+        "citizen_id": citizen.id,
+        "today": container.clock.today().isoformat(),
+        "count": len(reminders),
+        "reminders": [reminder.to_dict() for reminder in reminders],
+        "notes": [
+            "Напоминание показано в личном кабинете; рассылки по email, SMS или ЕПГУ нет.",
+        ],
+    }
 
 
 @router.put("/reminder-settings")

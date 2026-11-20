@@ -28,6 +28,7 @@ AUXILIARY_ROUTES = {
     ("get", "/patents/{patent_id}/deadline-points"),
     ("get", "/contracts/{contract_id}"),
     ("get", "/notifications/{notification_id}"),
+    ("get", "/reminders/due"),
 }
 
 
@@ -107,7 +108,7 @@ def test_failed_gateway_returns_502_and_keeps_task(client, container: Container)
         json={
             "contract_id": contract["contract"]["id"],
             "channel": "epgu",
-            "confirmation": {"signature": "SIG"},
+            "confirmation": {"signature": "SIG", "receipt_number": "EPGU-FAIL"},
             "simulate_failure": True,
         },
     )

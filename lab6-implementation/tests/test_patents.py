@@ -113,9 +113,10 @@ def test_archive_patent_closes_points_and_reminders(api, container: Container):
     assert body["patent"]["status"] == "archived"
     assert body["patent"]["archive_basis"] == "new_patent"
     assert body["cancelled_deadline_points"] == 3
+    assert body["skipped_reminders"] > 0
     assert all(point.is_closed() for point in container.points.by_patent(patent_id))
     assert all(
-        reminder.status.value == "cancelled"
+        reminder.status.value == "skipped"
         for reminder in container.reminders.all()
     )
 

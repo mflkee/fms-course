@@ -12,7 +12,6 @@ from datetime import date
 
 from app.control.deadline_service import DeadlineService
 from app.control.invariants import (
-    SENT_NOTIFICATION_STATUSES,
     contract_is_late,
     ensure_activity_allowed,
     ensure_no_active_contract,
@@ -226,10 +225,12 @@ class ContractService:
 
     # --- операция 5: отменитьДоговор --------------------------------------
     def cancel(self, *, contract_id: str, reason: str) -> dict:
-        """Отмена договора, по которому ещё не направлено уведомление МВД.
+        """Отмена черновика договора (лаб. 3, операция 5).
 
-        После отправки уведомления запись о договоре становится
-        доказательством (DESIGN.md, раздел 1) и не отменяется.
+        Действующий договор операцией не отменяется (409): ни договор со
+        статусом «заключён», ни договор с направленным уведомлением. Точка
+        «заключить договор» при отмене черновика не закрывалась, поэтому
+        остаётся открытой и не переоткрывается.
         """
         contract = self._contracts.require(contract_id)
         if contract.status is ContractStatus.CANCELLED:
@@ -238,48 +239,33 @@ class ContractService:
                 code="CONTRACT_ALREADY_CANCELLED",
                 details={"contract_id": contract.id},
             )
-        history = self._notifications.history_by_contract(contract.id)
-        if any(
-            item.status.value in SENT_NOTIFICATION_STATUSES for item in history
-        ):
+        if contract.status is ContractStatus.NOTIFICATION_SENT:
             raise ConflictError(
                 "по договору уже направлено уведомление МВД: отмена невозможна, "
-                "доказательства отправки сохраняются; смена работодателя — это "
-                "новый договор и новое уведомление",
+                "доказательства отправки сохраняются",
                 code="CONTRACT_NOTIFICATION_SENT",
                 details={"contract_id": contract.id},
+            )
+        if not contract.is_draft():
+            raise ConflictError(
+                "действующий договор операцией «отменитьДоговор» не отменяется: "
+                "операция применяется только к черновику (согласие сторон не подтверждено)",
+                code="CONTRACT_ACTIVE",
+                details={"contract_id": contract.id, "status": contract.status.value},
             )
         if not reason or not reason.strip():
             raise ValidationFailure(
                 "укажите причину отмены договора", code="CANCEL_REASON_REQUIRED"
             )
 
-        was_active = contract.is_active()
         contract.cancel(reason.strip(), self._clock.today())
-
-        reopened: DeadlinePoint | None = None
-        patent = self._patents.find(contract.patent_id)
-        if (
-            was_active
-            and patent is not None
-            and patent.is_current()
-            and self._contracts.active_by_patent(patent.id) is None
-        ):
-            point = self._deadlines.ensure_point(patent, PointKind.CONCLUDE_CONTRACT)
-            point.reopen(patent.employment_deadline)
-            self._deadlines.recalculate(
-                patent, reason="отмена договора: срок трудоустройства продолжает идти"
-            )
-            reopened = point
-
+        point = self._deadlines.latest_point(contract.patent_id, PointKind.CONCLUDE_CONTRACT)
         return {
             "contract": contract.to_dict(),
-            "active_contract_created": False,
-            "reopened_point": reopened.to_dict() if reopened else None,
             "history_preserved": True,
-            "deadline_point_state": "open",
+            "deadline_point": point.to_dict() if point else None,
             "notes": [
-                "Неуспешная попытка сохранена в истории.",
+                "Черновик отклонён; действующий договор не создан (ИНВ-1 не нарушен).",
                 "Контрольная точка «заключить договор» остаётся открытой: срок продолжает идти.",
             ],
         }

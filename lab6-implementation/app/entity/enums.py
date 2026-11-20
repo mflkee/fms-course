@@ -91,10 +91,8 @@ OPEN_POINT_STATUSES = frozenset(
 
 class ReminderStatus(StrEnum):
     SCHEDULED = "scheduled"  # запланировано
-    SENT = "sent"            # отправлено
-    DELIVERED = "delivered"  # доставлено
-    ERROR = "error"          # ошибка
-    CANCELLED = "cancelled"  # снято (точка закрыта)
+    SHOWN = "shown"          # показано в личном кабинете
+    SKIPPED = "skipped"      # пропущено: точка закрыта, патент архивный или согласие отозвано
 
 
 class OrganizationType(StrEnum):

@@ -73,16 +73,16 @@ class ReminderRepository(InMemoryRepository[Reminder]):
     def scheduled(self) -> list[Reminder]:
         return self.filter(lambda reminder: reminder.status is ReminderStatus.SCHEDULED)
 
-    def cancel_for_point(self, point_id: str) -> int:
-        cancelled = 0
+    def skip_for_point(self, point_id: str, reason: str) -> int:
+        skipped = 0
         for reminder in self.by_point(point_id):
             if reminder.status is ReminderStatus.SCHEDULED:
-                reminder.cancel()
-                cancelled += 1
-        return cancelled
+                reminder.skip(reason)
+                skipped += 1
+        return skipped
 
-    def cancel_for_patent(self, patent_id: str) -> int:
-        cancelled = 0
+    def skip_for_patent(self, patent_id: str, reason: str) -> int:
+        skipped = 0
         for point in self._points.by_patent(patent_id):
-            cancelled += self.cancel_for_point(point.id)
-        return cancelled
+            skipped += self.skip_for_point(point.id, reason)
+        return skipped

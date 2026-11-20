@@ -41,33 +41,22 @@ def test_inv2_notification_not_before_contract(api, contract):
         json={
             "contract_id": contract["contract"]["id"],
             "channel": "epgu",
-            "confirmation": {"signature": "SIG", "signed_at": "2026-10-04"},
+            "confirmation": {
+                "signature": "SIG",
+                "signed_at": "2026-10-04",
+                "receipt_number": "EPGU-1",
+            },
         },
     )
     body = api.expect(response, 422)
     assert body["code"] == "INV-2"
 
 
-def test_inv2_late_notification_blocked_without_override(api):
-    created = api.register_patent(series="72 26", number="950001", issue_date="2026-07-01")
-    contract = api.conclude(created["patent"]["id"], conclusion_date="2026-10-05")
-    response = api.client.post(
-        "/notifications",
-        json={
-            "contract_id": contract["contract"]["id"],
-            "channel": "epgu",
-            "confirmation": {"signature": "SIG"},
-        },
-    )
-    body = api.expect(response, 422)
-    assert body["code"] == "INV-2"
-    assert body["details"]["deadline"] == "2026-09-01"
-
-
-def test_inv2_late_notification_registered_with_override(api):
+def test_inv2_late_notification_is_registered_with_flag(api):
+    """Просрочка срока уведомления не блокирует отправку, а фиксируется."""
     created = api.register_patent(series="72 26", number="950003", issue_date="2026-07-01")
     contract = api.conclude(created["patent"]["id"], conclusion_date="2026-10-05")
-    result = api.notify(contract["contract"]["id"], allow_overdue=True)
+    result = api.notify(contract["contract"]["id"])
     assert result["late"] is True
     assert result["notification"]["status"] == "overdue"
     assert result["deadline_point"]["late"] is True
@@ -149,7 +138,7 @@ def test_inv6_archive_cancels_points_and_reminders(api, patent, container: Conta
     api.archive(patent["patent"]["id"], basis="annulled", reason="аннулирован")
     assert all(point.is_closed() for point in container.points.by_patent(patent["patent"]["id"]))
     assert all(
-        reminder.status.value == "cancelled" for reminder in container.reminders.all()
+        reminder.status.value == "skipped" for reminder in container.reminders.all()
     )
 
 
@@ -167,12 +156,40 @@ def test_inv7_duplicate_notification_for_contract_blocked(api, notified, contrac
     assert body["details"]["notification_id"] == notified["notification"]["id"]
 
 
-def test_inv7_notification_is_bound_to_its_contract(api, notified, contract, container):
-    """Уведомление принадлежит договору: другой договор его «не наследует».
+def test_inv7_notification_requires_active_contract(api, patent):
+    draft = api.conclude(
+        patent["patent"]["id"], consent_confirmed=False, document=None
+    )
+    contract_id = draft["contract"]["id"]
 
-    Поэтому смена работодателя (новый договор) требует нового уведомления, а
-    повтор по старому договору запрещён.
-    """
+    response = api.client.post(
+        "/notifications",
+        json={
+            "contract_id": contract_id,
+            "channel": "epgu",
+            "confirmation": {"signature": "SIG", "receipt_number": "EPGU-1"},
+        },
+    )
+    body = api.expect(response, 409)
+    assert body["code"] == "INV-7"
+    assert body["details"]["status"] == "draft"
+
+    api.client.post(f"/contracts/{contract_id}/cancel", json={"reason": "отказ"})
+    response = api.client.post(
+        "/notifications",
+        json={
+            "contract_id": contract_id,
+            "channel": "epgu",
+            "confirmation": {"signature": "SIG", "receipt_number": "EPGU-2"},
+        },
+    )
+    body = api.expect(response, 409)
+    assert body["code"] == "INV-7"
+    assert body["details"]["status"] == "cancelled"
+
+
+def test_inv7_notification_is_bound_to_its_contract(api, notified, contract, container):
+    """Уведомление принадлежит договору: другой договор его «не наследует»."""
     contract_id = contract["contract"]["id"]
     stored = container.notifications.by_contract(contract_id)
     assert stored is not None

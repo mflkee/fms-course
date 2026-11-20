@@ -112,6 +112,12 @@ class ReminderSettings:
 
 @dataclass(kw_only=True)
 class Reminder:
+    """Напоминание. Рассылки нет: канал всегда ``personal_account``.
+
+    ``sent_at`` — датаОтправки из DESIGN.md §5: момент выдачи напоминания в
+    личный кабинет (переход в статус «показано»).
+    """
+
     point_id: str
     channel: NotificationChannel
     days_before: int
@@ -120,24 +126,18 @@ class Reminder:
     id: str = field(default_factory=new_id)
     status: ReminderStatus = ReminderStatus.SCHEDULED
     sent_at: datetime | None = None
-    error: str | None = None
+    skip_reason: str | None = None
     escalation: bool = False
 
-    def mark_sent(self, at: datetime) -> None:
-        self.status = ReminderStatus.SENT
-        self.sent_at = at
-
-    def mark_delivered(self) -> None:
-        if self.status is ReminderStatus.SENT:
-            self.status = ReminderStatus.DELIVERED
-
-    def mark_error(self, reason: str) -> None:
-        self.status = ReminderStatus.ERROR
-        self.error = reason
-
-    def cancel(self) -> None:
+    def mark_shown(self, at: datetime) -> None:
         if self.status is ReminderStatus.SCHEDULED:
-            self.status = ReminderStatus.CANCELLED
+            self.status = ReminderStatus.SHOWN
+            self.sent_at = at
+
+    def skip(self, reason: str) -> None:
+        if self.status is ReminderStatus.SCHEDULED:
+            self.status = ReminderStatus.SKIPPED
+            self.skip_reason = reason
 
     def to_dict(self) -> dict:
         return {
@@ -148,7 +148,7 @@ class Reminder:
             "planned_at": self.planned_at.isoformat(),
             "status": self.status.value,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
-            "error": self.error,
+            "skip_reason": self.skip_reason,
             "escalation": self.escalation,
             "text": self.text,
         }

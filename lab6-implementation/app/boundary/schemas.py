@@ -70,8 +70,11 @@ class ContractCancelRequest(StrictModel):
 
 # --- уведомления ---------------------------------------------------------
 class ConfirmationPayload(StrictModel):
+    """Сведения об отправке, которые вводит исполнитель после подачи в ЕПГУ/Почту."""
+
     signature: str | None = Field(default=None, max_length=255)
     signed_at: date | None = None
+    receipt_number: str | None = Field(default=None, max_length=64)
     sent_at: date | None = None
     track_number: str | None = Field(default=None, max_length=64)
     inventory: str | None = Field(default=None, max_length=255)
@@ -81,7 +84,6 @@ class NotificationCreateRequest(StrictModel):
     contract_id: str
     channel: NotificationChannel
     confirmation: ConfirmationPayload | None = None
-    allow_overdue: bool = False
     simulate_failure: bool | None = None
 
 

@@ -18,8 +18,11 @@ def send_notification(
 ) -> dict:
     """Операция 6. ``направитьУведомлениеМВД``.
 
-    При отказе источника (ЕПГУ/Почта) возвращается 502, уведомление сохраняется
-    в статусе ``error`` — задачу закрывает операция 7.
+    Система не отправляет уведомление: она формирует комплект и регистрирует
+    квитанцию ЕПГУ или трек-номер, введённые исполнителем. Просрочка срока не
+    блокирует регистрацию, а фиксируется (``late``). При отказе канала
+    возвращается 502, уведомление сохраняется в статусе ``error`` — задачу
+    закрывает операция 7.
     """
     result = container.notification_service.send(
         contract_id=payload.contract_id,
@@ -27,7 +30,6 @@ def send_notification(
         confirmation=(
             payload.confirmation.model_dump() if payload.confirmation else None
         ),
-        allow_overdue=payload.allow_overdue,
         simulate_failure=payload.simulate_failure,
     )
     return result.to_dict()

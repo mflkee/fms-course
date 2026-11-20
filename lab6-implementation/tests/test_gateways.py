@@ -1,4 +1,8 @@
-"""Шлюзы: предсказуемые ответы, детерминированные доказательства, режим отказа."""
+"""Шлюзы: формирование комплекта, регистрация доказательств, режим отказа канала.
+
+Шлюзы не обращаются к внешним системам: квитанция и трек-номер приходят от
+исполнителя и только регистрируются.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,13 @@ from app.gateway.base import FailurePolicy
 from app.gateway.epgu import EpguGateway
 from app.gateway.post import PostGateway
 
+OFFICE = MvdOffice(
+    code="72-001",
+    name="УВМ УМВД России по Тюменской области",
+    address="г. Тюмень, ул. Водопроводная, 12",
+    region_code="72",
+)
+
 
 def make_notification() -> Notification:
     return Notification(
@@ -23,53 +34,73 @@ def make_notification() -> Notification:
     )
 
 
-def test_epgu_receipt_is_deterministic_and_failure_is_configurable():
+def test_epgu_package_lists_enclosures_without_sending():
+    gateway = EpguGateway(FailurePolicy())
+    package = gateway.build_package(
+        addressee=OFFICE, signed_at=date(2026, 10, 25), contract_copy_attached=True
+    )
+    assert package.channel == "epgu"
+    assert package.addressee == OFFICE.name
+    assert package.enclosures == [
+        "уведомление МВД",
+        "копия договора",
+        "электронная подпись от 2026-10-25",
+    ]
+
+
+def test_epgu_registers_receipt_entered_by_executor():
     notification = make_notification()
     gateway = EpguGateway(FailurePolicy())
 
-    first = gateway.send(notification, signature="SIG", signed_at=date(2026, 10, 25))
-    second = gateway.send(notification, signature="SIG", signed_at=date(2026, 10, 25))
-    assert first.number == second.number
-    assert first.number.startswith("EPGU-")
+    receipt = gateway.register_receipt(notification, receipt_number="EPGU-99-001")
+    assert receipt.number == "EPGU-99-001"
+    assert receipt.channel == "epgu"
 
+
+def test_epgu_failure_is_configurable():
+    notification = make_notification()
     failing = EpguGateway(FailurePolicy({"epgu"}))
+
     with pytest.raises(GatewayError) as error:
-        failing.send(notification, signature="SIG", signed_at=date(2026, 10, 25))
+        failing.register_receipt(notification, receipt_number="EPGU-99-001")
     assert error.value.code == "GATEWAY_ERROR"
     assert error.value.details["gateway"] == "epgu"
 
     # явное «не отказывать» перекрывает политику окружения
-    receipt = failing.send(
-        notification,
-        signature="SIG",
-        signed_at=date(2026, 10, 25),
-        simulate_failure=False,
+    receipt = failing.register_receipt(
+        notification, receipt_number="EPGU-99-001", simulate_failure=False
     )
-    assert receipt.number == first.number
+    assert receipt.number == "EPGU-99-001"
 
 
-def test_post_gateway_returns_track_number_and_document():
+def test_post_package_and_track_registration():
     notification = make_notification()
     gateway = PostGateway(FailurePolicy())
-    office = MvdOffice(
-        code="72-001",
-        name="УВМ УМВД России по Тюменской области",
-        address="г. Тюмень, ул. Водопроводная, 12",
-        region_code="72",
-    )
 
-    receipt = gateway.send(
-        notification,
-        addressee=office,
+    package = gateway.build_package(
+        addressee=OFFICE,
         inventory="опись на 2 листах",
         sent_at=date(2026, 10, 25),
+        contract_copy_attached=False,
     )
-    assert receipt.number.startswith("RU-")
-    assert "опись" in receipt.detail
+    assert package.channel == "post"
+    assert package.enclosures == [
+        "уведомление МВД",
+        "опись вложения: опись на 2 листах (отправка 2026-10-25)",
+    ]
 
-    document = gateway.return_document(receipt.number)
-    assert document.filename.startswith("return-")
-    assert document.owner_type == "notification"
+    receipt = gateway.register_track(notification, track_number="RU123456789")
+    assert receipt.number == "RU123456789"
+    assert receipt.channel == "post"
+
+
+def test_post_failure_is_configurable():
+    notification = make_notification()
+    failing = PostGateway(FailurePolicy({"post"}))
+
+    with pytest.raises(GatewayError) as error:
+        failing.register_track(notification, track_number="RU1")
+    assert error.value.details["gateway"] == "post"
 
 
 def test_failure_policy_reads_environment(monkeypatch):

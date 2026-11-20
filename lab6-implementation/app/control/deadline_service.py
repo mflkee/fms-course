@@ -128,7 +128,7 @@ class DeadlineService:
         point.critical = False
         point.late = late
         point.violation_date = on_date if late else None
-        self._reminders.cancel_for_point(point.id)
+        self._reminders.skip_for_point(point.id, "контрольная точка выполнена")
         return point
 
     def cancel_all(self, patent: Patent, reason: str) -> int:
@@ -136,7 +136,7 @@ class DeadlineService:
         for point in self._points.by_patent(patent.id):
             if point.is_open():
                 point.cancel(reason)
-                self._reminders.cancel_for_point(point.id)
+                self._reminders.skip_for_point(point.id, "патент архивный")
                 cancelled += 1
         return cancelled
 

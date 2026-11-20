@@ -1,11 +1,17 @@
-"""Общая часть шлюзов к внешним системам (ЕПГУ, Почта России).
+"""Общая часть шлюзов ЕПГУ и Почты России.
 
-Шлюз — единственное место, где модель соприкасается с внешним миром.
-Заглушки отвечают предсказуемо (детерминированные номера квитанций и
-трек-номеров) и умеют имитировать отказ источника:
+Шлюз — формирователь комплекта и регистратор доказательств, а не транспорт.
+Система ничего не отправляет и ни с кем не интегрируется (DESIGN.md, раздел 1):
 
-* окружение ``FMS_GATEWAY_FAILURE=epgu,post`` (или ``all``) — отказ на
-  уровне приложения;
+* ``build_package`` формирует комплект (уведомление, копия договора, опись
+  или подпись) — текст для исполнителя, без обращения к внешней системе;
+* ``register_receipt`` / ``register_track`` регистрируют квитанцию ЕПГУ или
+  трек-номер Почты, которые ввёл исполнитель после фактической отправки.
+
+Отказ канала (по данным исполнителя) имитируется так же, как раньше:
+
+* окружение ``FMS_GATEWAY_FAILURE=epgu,post`` (или ``all``) — отказ на уровне
+  приложения;
 * флаг ``simulate_failure`` в запросе — отказ на уровне одного вызова.
 
 Оба режима дают ``GatewayError`` → HTTP 502; вызывающий сервис оставляет
@@ -14,9 +20,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.errors import GatewayError
@@ -26,7 +31,7 @@ GATEWAY_NAMES = {"epgu", "post"}
 
 
 class FailurePolicy:
-    """Решение «источник должен вернуть ошибку?»."""
+    """Решение «канал отказал в регистрации отправления?»."""
 
     def __init__(self, failing: set[str] | None = None) -> None:
         self._failing = {item.strip().lower() for item in (failing or set()) if item.strip()}
@@ -53,31 +58,41 @@ class FailurePolicy:
     def require_available(self, gateway: str, override: bool | None = None) -> None:
         if self.should_fail(gateway, override):
             raise GatewayError(
-                f"источник «{gateway}» вернул ошибку (режим имитации отказа)",
+                f"канал «{gateway}» не принял отправление (режим имитации отказа)",
                 code="GATEWAY_ERROR",
                 details={"gateway": gateway, "mode": "simulated_failure"},
             )
 
 
-def deterministic_number(prefix: str, seed: str, width: int = 10) -> str:
-    """Предсказуемый номер доказательства: одинаковый вход → одинаковый номер."""
-    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest().upper()
-    return f"{prefix}-{digest[:width]}"
+@dataclass(kw_only=True)
+class Package:
+    """Комплект для исполнителя: что приложить и кому направить."""
+
+    channel: str
+    addressee: str
+    enclosures: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "channel": self.channel,
+            "addressee": self.addressee,
+            "enclosures": list(self.enclosures),
+        }
 
 
 @dataclass(kw_only=True)
 class Receipt:
-    """Квитанция ЕПГУ или трек-номер почтового отправления."""
+    """Зарегистрированное доказательство: квитанция ЕПГУ или трек-номер Почты."""
 
     number: str
-    issued_at: datetime
+    registered_at: datetime
     channel: str
     detail: str = ""
 
     def to_dict(self) -> dict:
         return {
             "number": self.number,
-            "issued_at": self.issued_at.isoformat(),
+            "registered_at": self.registered_at.isoformat(),
             "channel": self.channel,
             "detail": self.detail,
         }

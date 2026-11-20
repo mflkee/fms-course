@@ -87,21 +87,28 @@ def ensure_single_current_patent(existing: Patent | None) -> None:
         )
 
 
-# --- ИНВ-7: смена работодателя требует нового уведомления ----------------
-def ensure_notification_not_repeated(history: list[Notification]) -> None:
-    """По одному договору уведомление направляется один раз.
+# --- ИНВ-7: уведомление всегда относится к действующему договору ---------
+def ensure_notification_for_active_contract(
+    contract: Contract, history: list[Notification]
+) -> None:
+    """Уведомление направляется только по действующему договору, один раз.
 
-    Новый работодатель — это новый договор и, следовательно, новое
-    уведомление; повтор по тому же договору запрещён.
+    Черновик и отменённый договор не могут быть основанием уведомления;
+    по действующему договору повторное уведомление запрещено.
     """
+    if not contract.is_active():
+        raise ConflictError(
+            "уведомление относится только к действующему договору; "
+            f"договор в статусе «{contract.status.value}»",
+            code="INV-7",
+            details={"contract_id": contract.id, "status": contract.status.value},
+        )
     successful = [
         item for item in history if item.status.value in SENT_NOTIFICATION_STATUSES
     ]
     if successful:
         raise ConflictError(
-            "по договору уже направлено уведомление МВД: повторная отправка "
-            "невозможна; при смене работодателя заключается новый договор и "
-            "направляется новое уведомление",
+            "по договору уже направлено уведомление МВД: повторная отправка не допускается",
             code="INV-7",
             details={
                 "notification_id": successful[-1].id,

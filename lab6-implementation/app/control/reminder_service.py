@@ -1,9 +1,10 @@
 """Сервис напоминаний (``СервисНапоминаний``), операция 8 ``настроитьНапоминания``.
 
-Напоминание существует только при контрольной точке (ИНВ-6), поэтому сервис
-не создаёт их «напрямую»: он раскладывает моменты предупреждений
-(30/14/7/3/1 день по умолчанию) по открытым точкам. По закрытым точкам
-напоминания не создаются, а запланированные — снимаются.
+Рассылки нет: напоминание отображается в личном кабинете гражданина
+(``GET /reminders/due``). Напоминание существует только при контрольной точке
+(ИНВ-6), поэтому сервис раскладывает моменты предупреждений (30/14/7/3/1 день
+по умолчанию) по открытым точкам. Напоминания закрытых точек не создаются, а
+запланированные — переводятся в «пропущено» с указанием причины.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from datetime import date, datetime, timedelta
 
 from app.entity.clock import Clock
 from app.entity.deadline import DeadlinePoint, Reminder, ReminderSettings
-from app.entity.enums import NotificationChannel, PointKind
+from app.entity.enums import NotificationChannel, PointKind, ReminderStatus
 from app.entity.patent import Patent
 from app.entity.people import ForeignCitizen
 from app.errors import ValidationFailure
@@ -22,6 +23,8 @@ from app.repository.patents import PatentRepository
 from app.repository.people import CitizenRepository
 
 DEFAULT_DAYS = [30, 14, 7, 3, 1]
+
+SHOWABLE_STATUSES = frozenset({ReminderStatus.SCHEDULED, ReminderStatus.SHOWN})
 
 POINT_TITLES = {
     PointKind.CONCLUDE_CONTRACT: "заключить договор",
@@ -96,8 +99,9 @@ class ReminderService:
             if consent:
                 created.extend(self._schedule_for_patent(patent, settings))
             else:
-                # отзыв согласия останавливает уже запланированные напоминания
-                self._reminders.cancel_for_patent(patent.id)
+                self._reminders.skip_for_patent(
+                    patent.id, "согласие на напоминания отозвано"
+                )
         return ReminderPlan(settings=settings, created=created, skipped_closed=skipped_closed)
 
     def _schedule_for_patent(
@@ -106,7 +110,7 @@ class ReminderService:
         """Пересоздать напоминания открытых точек без дублей."""
         created: list[Reminder] = []
         for point in self._points.open_by_patent(patent.id):
-            self._reminders.cancel_for_point(point.id)
+            self._reminders.skip_for_point(point.id, "заменено новым планом напоминаний")
             created.extend(self._schedule([point], settings))
         return created
 
@@ -124,7 +128,7 @@ class ReminderService:
         settings = self.settings_for_patent(patent)
         if settings is None:
             return []
-        self._reminders.cancel_for_point(point.id)
+        self._reminders.skip_for_point(point.id, "заменено новым планом напоминаний")
         return self._schedule([point], settings)
 
     def _schedule(
@@ -132,7 +136,6 @@ class ReminderService:
     ) -> list[Reminder]:
         created: list[Reminder] = []
         today = self._clock.today()
-        channel = settings.channels[0]
         for point in points:
             if not point.is_open():
                 continue
@@ -142,7 +145,7 @@ class ReminderService:
                     continue  # момент уже прошёл — «просроченное» напоминание не создаём
                 reminder = Reminder(
                     point_id=point.id,
-                    channel=channel,
+                    channel=NotificationChannel.PERSONAL_ACCOUNT,
                     days_before=days,
                     planned_at=planned_at,
                     text=self._text(point, days),
@@ -162,7 +165,7 @@ class ReminderService:
         settings = self.settings_for_patent(patent)
         created: list[Reminder] = []
         for point in self._points.open_by_patent(patent.id):
-            self._reminders.cancel_for_point(point.id)
+            self._reminders.skip_for_point(point.id, "заменено пересчётом сроков")
             if settings is not None:
                 created.extend(self._schedule([point], settings))
         return created
@@ -173,49 +176,42 @@ class ReminderService:
             return []
         return self._schedule_for_patent(patent, settings)
 
-    def cancel_for_point(self, point_id: str) -> int:
-        return self._reminders.cancel_for_point(point_id)
+    def skip_for_point(self, point_id: str, reason: str) -> int:
+        return self._reminders.skip_for_point(point_id, reason)
 
-    def cancel_for_patent(self, patent_id: str) -> int:
-        return self._reminders.cancel_for_patent(patent_id)
+    def skip_for_patent(self, patent_id: str, reason: str) -> int:
+        return self._reminders.skip_for_patent(patent_id, reason)
 
-    # --- доставка и эскалация -------------------------------------------
-    def deliver_due(self) -> list[Reminder]:
+    # --- личный кабинет --------------------------------------------------
+    def show_due(self, citizen: ForeignCitizen) -> list[Reminder]:
+        """Актуальные напоминания гражданина: момент наступил, точка открыта.
+
+        Запланированные переводятся в «показано» (датаОтправки = момент показа).
+        Уже показанные возвращаются повторно, пока точка открыта.
+        """
         today = self._clock.today()
-        delivered: list[Reminder] = []
-        for reminder in self._reminders.scheduled():
-            if reminder.planned_at > today:
-                continue
-            reminder.mark_sent(self._clock.now())
-            if reminder.channel in {
-                NotificationChannel.EMAIL,
-                NotificationChannel.PERSONAL_ACCOUNT,
-                NotificationChannel.EPGU,
-            }:
-                reminder.mark_delivered()
-            delivered.append(reminder)
-        return delivered
+        now = self._clock.now()
+        due: list[Reminder] = []
+        for patent in self._patents.all_by_citizen(citizen.id):
+            for point in self._points.open_by_patent(patent.id):
+                for reminder in self._reminders.by_point(point.id):
+                    if reminder.planned_at > today or reminder.status not in SHOWABLE_STATUSES:
+                        continue
+                    reminder.mark_shown(now)
+                    due.append(reminder)
+        return sorted(due, key=lambda item: (item.planned_at, item.point_id))
 
+    # --- эскалация (операция 10) -----------------------------------------
     def escalate(self, *, point: DeadlinePoint, text: str) -> Reminder:
-        """Эскалация нарушения срока (операция 10): критичное напоминание."""
-        patent = self._patents.find(point.patent_id)
-        citizen = self._citizens.find(patent.citizen_id) if patent is not None else None
-        settings = citizen.reminder_settings if citizen is not None else None
-        channel = (
-            settings.channels[0]
-            if settings is not None and settings.channels
-            else NotificationChannel.EMAIL
-        )
+        """Эскалация нарушения срока: напоминание в кабинете, запланированное на сегодня."""
         reminder = Reminder(
             point_id=point.id,
-            channel=channel,
+            channel=NotificationChannel.PERSONAL_ACCOUNT,
             days_before=0,
             planned_at=self._clock.today(),
             text=text,
             escalation=True,
         )
-        reminder.mark_sent(self._clock.now())
-        reminder.mark_delivered()
         return self._reminders.add(reminder)
 
     # --- чтение ----------------------------------------------------------
@@ -233,13 +229,6 @@ class ReminderService:
         for reminder in self._reminders.all():
             counts[reminder.status.value] = counts.get(reminder.status.value, 0) + 1
         return counts
-
-    def cancel_all_for_closed(self, patent: Patent) -> int:
-        cancelled = 0
-        for point in self._points.by_patent(patent.id):
-            if point.is_closed():
-                cancelled += self._reminders.cancel_for_point(point.id)
-        return cancelled
 
     def today(self) -> date:
         return self._clock.today()

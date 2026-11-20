@@ -1,10 +1,14 @@
-"""Слой шлюзов к внешним системам (DESIGN.md, раздел 6: ``ШлюзЕПГУ``, ``ШлюзПочты``)."""
+"""Слой шлюзов (DESIGN.md, раздел 6: ``ШлюзЕПГУ``, ``ШлюзПочты``).
+
+Шлюзы формируют комплект и регистрируют доказательства, которые ввёл
+исполнитель. Внешних вызовов нет.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.gateway.base import FailurePolicy, Receipt
+from app.gateway.base import FailurePolicy, Package, Receipt
 from app.gateway.epgu import EpguGateway
 from app.gateway.post import PostGateway
 
@@ -27,6 +31,7 @@ __all__ = [
     "EpguGateway",
     "FailurePolicy",
     "Gateways",
+    "Package",
     "PostGateway",
     "Receipt",
 ]

@@ -164,15 +164,27 @@ def test_draft_contract_can_be_cancelled(api, patent, container: Container):
     assert body["contract"]["status"] == "cancelled"
     assert body["contract"]["cancel_reason"] == "кандидат отказался от трудоустройства"
     assert body["history_preserved"] is True
-    assert body["deadline_point_state"] == "open"
+    assert body["deadline_point"]["status"] == "open"
 
     assert container.contracts.active_by_patent(patent["patent"]["id"]) is None
 
 
-def test_concluded_contract_can_be_cancelled_before_notification(
-    api, patent, container: Container
-):
-    """Альтернатива П02 «отказ»: договор отменён, срок трудоустройства идёт."""
+def test_cancelled_draft_frees_patent_for_new_contract(api, patent, container: Container):
+    draft = api.conclude(
+        patent["patent"]["id"], consent_confirmed=False, document=None
+    )
+    api.client.post(
+        f"/contracts/{draft['contract']['id']}/cancel",
+        json={"reason": "отказ от сделки"},
+    )
+
+    second = api.conclude(patent["patent"]["id"], number="2-2026")
+    assert second["contract"]["status"] == "concluded"
+    assert container.contracts.active_by_patent(patent["patent"]["id"]) is not None
+
+
+def test_concluded_contract_cannot_be_cancelled(api, patent, container: Container):
+    """Операция 5 применяется только к черновику: действующий договор — отказ."""
     created = api.conclude(patent["patent"]["id"])
     contract_id = created["contract"]["id"]
 
@@ -181,16 +193,17 @@ def test_concluded_contract_can_be_cancelled_before_notification(
             f"/contracts/{contract_id}/cancel",
             json={"reason": "работодатель отказал в трудоустройстве"},
         ),
-        200,
+        409,
     )
-    assert body["contract"]["status"] == "cancelled"
-    assert body["reopened_point"]["kind"] == "conclude_contract"
-    assert body["deadline_point_state"] == "open"
-    assert container.contracts.active_by_patent(patent["patent"]["id"]) is None
+    assert body["code"] == "CONTRACT_ACTIVE"
+    assert body["details"]["status"] == "concluded"
 
-    # после отмены патент снова свободен: можно заключить договор с другим работодателем
-    second = api.conclude(patent["patent"]["id"], number="2-2026")
-    assert second["contract"]["status"] == "concluded"
+    stored = container.contracts.require(contract_id)
+    assert stored.is_active()
+    conclude_point = container.points.latest_by_kind(
+        patent["patent"]["id"], PointKind.CONCLUDE_CONTRACT
+    )
+    assert conclude_point.status.value == "done"
 
 
 def test_cancel_after_notification_rejected(api, notified, contract):

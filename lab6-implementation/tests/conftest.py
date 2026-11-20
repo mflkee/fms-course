@@ -80,7 +80,7 @@ class Api:
         payload = {
             "contract_id": contract_id,
             "channel": "epgu",
-            "confirmation": {"signature": "SIGNATURE-1"},
+            "confirmation": {"signature": "SIGNATURE-1", "receipt_number": "EPGU-TEST-0001"},
         }
         payload.update(overrides)
         response = self.client.post("/notifications", json=payload)

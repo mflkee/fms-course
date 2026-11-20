@@ -111,7 +111,8 @@ def test_register_violation_creates_escalation(api):
     assert body["deadline_point"]["critical"] is True
     assert body["deadline_point"]["violation_date"] == "2026-10-25"
     assert body["escalation_reminder"]["escalation"] is True
-    assert body["escalation_reminder"]["status"] == "delivered"
+    assert body["escalation_reminder"]["status"] == "scheduled"
+    assert body["escalation_reminder"]["channel"] == "personal_account"
     assert body["escalation_reminder"]["point_id"] == conclude_point["id"]
 
 
@@ -161,3 +162,61 @@ def test_deadline_points_of_patent_are_listed(api, patent):
         "extend_patent",
     }
     assert body["summary"]["counts"]["open"] == 3
+
+
+def _due(api) -> dict:
+    return api.expect(
+        api.client.get("/reminders/due", params={"citizen_id": api.citizen_id}), 200
+    )
+
+
+def test_due_reminders_are_shown_and_stay_while_point_is_open(api, patent):
+    # 37 дней до срока 2026-12-01 — момент напоминания совпадает с сегодняшним днём
+    api.remind(days=[37])
+
+    first = _due(api)
+    assert first["today"] == "2026-10-25"
+    assert first["count"] == 2
+    assert {reminder["status"] for reminder in first["reminders"]} == {"shown"}
+    assert all(reminder["sent_at"] for reminder in first["reminders"])
+
+    # показанное остаётся актуальным, пока точка открыта; повторный вызов безопасен
+    second = _due(api)
+    assert second["count"] == 2
+
+
+def test_escalation_reminder_appears_in_cabinet(api):
+    created = api.register_patent(series="72 26", number="930003", issue_date="2026-07-01")
+    conclude_point = next(
+        point
+        for point in created["deadline_points"]
+        if point["kind"] == "conclude_contract"
+    )
+    api.violate(conclude_point["id"], "2026-10-25")
+
+    body = _due(api)
+    escalations = [reminder for reminder in body["reminders"] if reminder["escalation"]]
+    assert len(escalations) == 1
+    assert escalations[0]["point_id"] == conclude_point["id"]
+    assert escalations[0]["status"] == "shown"
+
+
+def test_reminders_of_closed_point_are_skipped_not_shown(api, patent, container: Container):
+    api.remind(days=[37])
+    points = {point["kind"]: point["id"] for point in patent["deadline_points"]}
+    api.conclude(patent["patent"]["id"])
+
+    body = _due(api)
+    assert {reminder["point_id"] for reminder in body["reminders"]} == {
+        points["send_notification"]
+    }
+    own = container.reminders.by_point(points["conclude_contract"])
+    assert own
+    assert all(item.status.value == "skipped" for item in own)
+    assert all(item.skip_reason == "контрольная точка выполнена" for item in own)
+
+
+def test_due_reminders_unknown_citizen(api):
+    response = api.client.get("/reminders/due", params={"citizen_id": "unknown"})
+    body = api.expect(response, 404)
+    assert body["code"] == "NOT_FOUND"

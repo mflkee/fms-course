@@ -210,12 +210,14 @@ class PatentService:
             )
 
         patent.archive(basis, self._clock.today())
+        skipped_reminders = self._reminders.skip_for_patent(
+            patent.id, f"патент архивный: {basis.value}"
+        )
         cancelled_points = self._deadlines.cancel_all(patent, f"патент архивный: {basis.value}")
-        cancelled_reminders = self._reminders.cancel_for_patent(patent.id)
         return {
             "patent": patent.to_dict(),
             "cancelled_deadline_points": cancelled_points,
-            "cancelled_reminders": cancelled_reminders,
+            "skipped_reminders": skipped_reminders,
             "reason": reason,
         }
 

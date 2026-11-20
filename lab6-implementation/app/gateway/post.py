@@ -1,14 +1,16 @@
-"""Шлюз Почты России: отправка заказного письма с описью вложения."""
+"""Шлюз Почты России: формирование комплекта и регистрация трек-номера.
+
+Заказное письмо с описью исполнитель отправляет сам. Система собирает комплект
+и сохраняет трек-номер и опись, которые исполнитель внёс после отправки.
+"""
 
 from __future__ import annotations
 
 from datetime import date
 
 from app.entity.catalogs import MvdOffice
-from app.entity.documents import Document
-from app.entity.enums import DocumentType
 from app.entity.notification import Notification
-from app.gateway.base import FailurePolicy, Receipt, deterministic_number, utc_now
+from app.gateway.base import FailurePolicy, Package, Receipt, utc_now
 
 
 class PostGateway:
@@ -17,30 +19,31 @@ class PostGateway:
     def __init__(self, policy: FailurePolicy | None = None) -> None:
         self._policy = policy or FailurePolicy()
 
-    def send(
+    def build_package(
+        self,
+        *,
+        addressee: MvdOffice,
+        inventory: str,
+        sent_at: date,
+        contract_copy_attached: bool,
+    ) -> Package:
+        enclosures = ["уведомление МВД"]
+        if contract_copy_attached:
+            enclosures.append("копия договора")
+        enclosures.append(f"опись вложения: {inventory} (отправка {sent_at.isoformat()})")
+        return Package(channel=self.name, addressee=addressee.name, enclosures=enclosures)
+
+    def register_track(
         self,
         notification: Notification,
         *,
-        addressee: MvdOffice,
-        inventory: str | None,
-        sent_at: date | None,
+        track_number: str,
         simulate_failure: bool | None = None,
     ) -> Receipt:
         self._policy.require_available(self.name, simulate_failure)
         return Receipt(
-            number=deterministic_number("RU", notification.id),
-            issued_at=utc_now(),
+            number=track_number,
+            registered_at=utc_now(),
             channel=self.name,
-            detail=f"опись: {inventory or 'вложение'} → {addressee.name}",
-        )
-
-    def return_document(self, track_number: str) -> Document:
-        """Сведения о возврате отправления (заглушка: документ-подтверждение)."""
-        self._policy.require_available(self.name)
-        return Document.create(
-            doc_type=DocumentType.RECEIPT,
-            filename=f"return-{track_number}.pdf",
-            owner_type="notification",
-            owner_id=track_number,
-            source="post_gateway",
+            detail=f"трек-номер почтового отправления для уведомления {notification.id}",
         )
