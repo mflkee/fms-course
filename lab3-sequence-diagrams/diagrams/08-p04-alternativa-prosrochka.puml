@@ -1,0 +1,48 @@
+@startuml 08-p04-alternativa-prosrochka
+' Лаб. 3: системная диаграмма последовательностей (SSD, «чёрный ящик»)
+' Прецедент: П04 — альтернативный сценарий 4а («Срок истёк, действие не выполнено»)
+' Проверка: plantuml -checkonly 08-p04-alternativa-prosrochka.puml ; рендер: plantuml -tpng 08-p04-alternativa-prosrochka.puml
+' Репозиторий: https://github.com/mflkee/fms-course
+
+title П04, альтернатива 4а. Просрочка срока и фиксация нарушения
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam maxMessageSize 320
+skinparam sequenceMessageAlign left
+skinparam ParticipantBackgroundColor #F7FBFF
+skinparam ParticipantBorderColor #4A6FA5
+skinparam LifeLineBorderColor #9DB4D0
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFFDF0
+skinparam NoteBorderColor #C9B458
+
+actor "Иностранный гражданин (A1)" as CIT
+actor "Работодатель / заказчик по ГПХ (A2)" as EMP
+participant "Система «Действия после получения патента»" as SYS
+
+SYS -> SYS : 1. пересчитатьСрокиПатента(идПатента)
+note over SYS
+  Сводка пересчёта: точка «заключить договор» — остаток 1 день, статус «открыта»;
+  договор и уведомление МВД не зарегистрированы.
+end note
+SYS -> CIT : 2. Напоминание{вид = «заключить_договор», канал = «личный_кабинет»,\nостаток = «1 день», критическая = истина}
+note over SYS
+  Исполнитель не реагирует: за отведённый срок точка не закрыта ни договором (П02),
+  ни уведомлением (П03).
+end note
+SYS -> EMP : 3. Напоминание{вид = «направить_уведомление», канал = «email»,\nуровень = «эскалация»}
+SYS -> SYS : 4. зафиксироватьНарушениеСрока(идТочки, датаОбнаружения)
+note over SYS
+  Точка переведена в статус «просрочена», признак критичности — истина, дата нарушения
+  сохранена. Отдельного класса «инцидент» в модели нет: его роль выполняет просроченная
+  критическая точка, которая остаётся частью патента (ИНВ-6).
+end note
+SYS -> CIT : 5. предупреждениеОПоследствиях(риск = «аннулирование патента»,\nоснование = «непредставление уведомления в срок»)
+SYS -> EMP : 6. предупреждениеОПоследствиях(риск = «административная\nответственность за непредставление уведомления»)
+
+legend bottom left
+  Линии жизни: акторы лаб. 1 (A1–A4) и одна линия жизни системы.
+  Внутренние объекты подсистемы в SSD не показываются — они раскрыты в лаб. 4.
+end legend
+
+@enduml
