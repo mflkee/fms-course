@@ -7,16 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.boundary import (
-    contracts,
-    deadlines,
-    notifications,
-    patents,
-    payments,
-    reminders,
-    reports,
-    system,
-)
+from app.boundary import contracts, deadlines, notifications, patents, reminders, system
 from app.container import Container, build_container
 from app.errors import DomainError
 from app.seed import seed_demo_data
@@ -26,11 +17,11 @@ def create_app(container: Container | None = None, *, seed: bool = True) -> Fast
     application = FastAPI(
         title="ФМС — действия после получения патента",
         description=(
-            "Учебная реализация подсистемы (лаб. 6). 16 системных операций лаб. 3 "
-            "как REST-эндпоинты; модель проектирования лаб. 5 — слои "
+            "Учебная реализация подсистемы (лаб. 6). 10 операций DESIGN.md "
+            "как REST-эндпоинты; модель проектирования — слои "
             "boundary / control / entity / repository / gateway."
         ),
-        version="1.0.0",
+        version="2.0.0",
     )
     if container is None:
         container = build_container()
@@ -61,8 +52,6 @@ def create_app(container: Container | None = None, *, seed: bool = True) -> Fast
         notifications,
         reminders,
         deadlines,
-        payments,
-        reports,
         system,
     ):
         application.include_router(module.router)

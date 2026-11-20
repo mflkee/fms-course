@@ -1,4 +1,4 @@
-"""Перечисления предметной области (лаб. 2, раздел 5).
+"""Перечисления предметной области (DESIGN.md, раздел 5).
 
 Python-имена — английские, значения — тоже; соответствие русским значениям
 модели зафиксировано в README (таблица «перечисление → значения»).
@@ -17,24 +17,22 @@ class CitizenStatus(StrEnum):
 
 
 class PatentStatus(StrEnum):
-    ACTIVE = "active"                            # действует
-    PAID_UNTIL = "paid_until"                    # оплачен_до
-    EXPIRING = "expiring"                        # истекает
-    EXPIRED = "expired"                          # истёк
-    ARCHIVED = "archived"                        # архивный (аннулирован / выдан новый)
-    TERMINATED_NONPAYMENT = "terminated_nonpayment"  # прекращён_неуплата
+    ACTIVE = "active"        # действует
+    EXPIRING = "expiring"    # истекает
+    EXPIRED = "expired"      # истёк
+    ARCHIVED = "archived"    # архивный (аннулирован / выдан новый)
 
 
 CURRENT_PATENT_STATUSES = frozenset(
-    {PatentStatus.ACTIVE, PatentStatus.PAID_UNTIL, PatentStatus.EXPIRING}
+    {PatentStatus.ACTIVE, PatentStatus.EXPIRING}
 )
 
 
 class ArchiveBasis(StrEnum):
-    ANNULLED = "annulled"              # аннулирован
-    EXPIRED = "expired"                # истёк
-    NEW_PATENT = "new_patent"          # выдан новый
-    MVD_DECISION = "mvd_decision"      # решение МВД
+    ANNULLED = "annulled"          # аннулирован
+    EXPIRED = "expired"            # истёк
+    NEW_PATENT = "new_patent"      # выдан новый
+    MVD_DECISION = "mvd_decision"  # решение МВД
 
 
 class ContractKind(StrEnum):
@@ -56,8 +54,8 @@ ACTIVE_CONTRACT_STATUSES = frozenset(
 
 
 class NotificationChannel(StrEnum):
-    EPGU = "epgu"                      # ЕПГУ
-    POST = "post"                      # почта
+    EPGU = "epgu"                          # ЕПГУ
+    POST = "post"                          # почта
     PERSONAL_ACCOUNT = "personal_account"  # личный_кабинет
     EMAIL = "email"
     SMS = "sms"
@@ -71,17 +69,9 @@ class NotificationStatus(StrEnum):
     ERROR = "error"          # ошибка
 
 
-class PaymentStatus(StrEnum):
-    CONFIRMED = "confirmed"      # подтверждён
-    NOT_FOUND = "not_found"      # не_найден
-    INSUFFICIENT = "insufficient"  # недостаточно
-    RETURNED = "returned"        # возвращён
-
-
 class PointKind(StrEnum):
     CONCLUDE_CONTRACT = "conclude_contract"  # заключить_договор
     SEND_NOTIFICATION = "send_notification"  # направить_уведомление
-    PAY_NDFL = "pay_ndfl"                    # уплатить_НДФЛ
     EXTEND_PATENT = "extend_patent"          # продлить_патент
     CONTRACT_END = "contract_end"            # окончание_договора
 
@@ -120,28 +110,9 @@ class WorkMode(StrEnum):
 
 
 class DocumentType(StrEnum):
-    PATENT = "patent"                    # патент
-    CONTRACT = "contract"                # договор
-    AGREEMENT = "agreement"              # соглашение
-    NOTIFICATION = "notification"        # уведомление
-    RECEIPT = "receipt"                  # квитанция
-    INVENTORY = "inventory"              # опись
-    PAYMENT_RECEIPT = "payment_receipt"  # чек
-
-
-class Role(StrEnum):
-    CITIZEN = "citizen"                    # ПользовательИГ
-    EMPLOYER_REP = "employer_rep"          # ПредставительРаботодателя
-    ADMIN = "admin"                        # АдминистраторСистемы
-
-
-class ReportFormat(StrEnum):
-    CSV = "csv"
-    PDF = "pdf"
-
-
-class PaymentInputSource(StrEnum):
-    FNS = "fns"                  # автоматическое подтверждение из ФНС
-    BANK = "bank"                # ручное подтверждение по документу банка
-    GIS_GMP = "gismp"            # ГИС ГМП
-    MANUAL = "manual"            # вручную, по документу
+    PATENT = "patent"              # патент
+    CONTRACT = "contract"          # договор
+    AGREEMENT = "agreement"        # соглашение
+    NOTIFICATION = "notification"  # уведомление
+    RECEIPT = "receipt"            # квитанция
+    INVENTORY = "inventory"        # опись

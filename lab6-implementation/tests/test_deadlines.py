@@ -14,7 +14,9 @@ def test_configure_reminders_creates_for_open_points(api, patent, container: Con
     assert body["settings"]["consent"] is True
     assert body["reminders_count"] > 0
 
-    open_point_ids = {point.id for point in container.points.open_by_patent(patent["patent"]["id"])}
+    open_point_ids = {
+        point.id for point in container.points.open_by_patent(patent["patent"]["id"])
+    }
     assert all(
         reminder["point_id"] in open_point_ids for reminder in body["reminders_created"]
     )
@@ -49,33 +51,26 @@ def test_configure_reminders_skips_closed_points(api, patent, contract, containe
 def test_configure_reminders_requires_channels(api):
     response = api.client.put(
         "/reminder-settings",
-        json={"channels": [], "days": [30], "consent": True},
-        headers={"X-User-Login": "ig-petrov"},
+        json={"citizen_id": api.citizen_id, "channels": [], "days": [30]},
     )
     body = api.expect(response, 422)
     assert body["code"] == "REQUEST_VALIDATION_ERROR"
 
 
-def test_configure_reminders_requires_citizen(api):
+def test_configure_reminders_unknown_citizen(api):
     response = api.client.put(
         "/reminder-settings",
-        json={"channels": ["email"], "days": [30], "consent": True},
-        headers={"X-User-Login": "hr-romashka"},
+        json={"citizen_id": "unknown", "channels": ["email"], "days": [30]},
     )
-    body = api.expect(response, 403)
-    assert body["code"] == "FORBIDDEN"
+    body = api.expect(response, 404)
+    assert body["code"] == "NOT_FOUND"
 
 
-def test_recalculate_marks_overdue_and_critical(api):
+def test_recalculate_marks_overdue_and_critical(api, container: Container):
     created = api.register_patent(series="72 26", number="930001", issue_date="2026-07-01")
     patent_id = created["patent"]["id"]
 
-    response = api.client.post(
-        f"/patents/{patent_id}/recalculate",
-        json={"reason": "ежедневный контроль"},
-        headers={"X-User-Login": "admin"},
-    )
-    body = api.expect(response, 200)
+    body = api.recalculate(patent_id, reason="ежедневный контроль")
     summary = body["summary"]
 
     assert summary["employment_deadline"] == "2026-09-01"
@@ -86,19 +81,21 @@ def test_recalculate_marks_overdue_and_critical(api):
     assert all(point["critical"] for point in summary["overdue"])
 
 
-def test_recalculate_moves_ndfl_point_after_payment(api, patent, container):
-    api.pay(patent["patent"]["id"], period="2026-10")
-    response = api.client.post(
-        f"/patents/{patent['patent']['id']}/recalculate",
-        json={},
-        headers={"X-User-Login": "admin"},
-    )
-    body = api.expect(response, 200)
-    ndfl_points = [
-        point for point in body["summary"]["open"] if point["kind"] == "pay_ndfl"
-    ]
-    assert len(ndfl_points) == 1
-    assert ndfl_points[0]["planned_date"] == "2026-11-30"
+def test_recalculate_keeps_closed_points_closed(api, patent, contract):
+    body = api.recalculate(patent["patent"]["id"])
+    open_points = body["summary"]["open"]
+    assert all(point["kind"] != "conclude_contract" for point in open_points)
+    assert {point["kind"] for point in open_points} == {
+        "send_notification",
+        "extend_patent",
+    }
+
+
+def test_recalculate_reschedules_reminders(api, patent):
+    api.remind(days=[30, 7])
+    body = api.recalculate(patent["patent"]["id"], reason="после изменения сроков")
+    assert body["summary"]["counts"]["open"] == 3
+    assert body["reason"] == "после изменения сроков"
 
 
 def test_register_violation_creates_escalation(api):
@@ -109,12 +106,7 @@ def test_register_violation_creates_escalation(api):
         if point["kind"] == "conclude_contract"
     )
 
-    response = api.client.post(
-        f"/deadline-points/{conclude_point['id']}/violation",
-        json={"detected_at": "2026-10-25"},
-        headers={"X-User-Login": "admin"},
-    )
-    body = api.expect(response, 200)
+    body = api.violate(conclude_point["id"], "2026-10-25")
     assert body["deadline_point"]["status"] == "overdue"
     assert body["deadline_point"]["critical"] is True
     assert body["deadline_point"]["violation_date"] == "2026-10-25"
@@ -132,7 +124,6 @@ def test_register_violation_when_not_yet_due(api, patent):
     response = api.client.post(
         f"/deadline-points/{conclude_point['id']}/violation",
         json={"detected_at": "2026-10-25"},
-        headers={"X-User-Login": "admin"},
     )
     body = api.expect(response, 422)
     assert body["code"] == "POINT_NOT_OVERDUE"
@@ -141,7 +132,6 @@ def test_register_violation_when_not_yet_due(api, patent):
     future = api.client.post(
         f"/deadline-points/{conclude_point['id']}/violation",
         json={"detected_at": "2026-12-31"},
-        headers={"X-User-Login": "admin"},
     )
     assert api.expect(future, 422)["code"] == "DATE_IN_FUTURE"
 
@@ -155,7 +145,19 @@ def test_register_violation_on_closed_point(api, patent, contract):
     response = api.client.post(
         f"/deadline-points/{conclude_point['id']}/violation",
         json={"detected_at": "2026-10-25"},
-        headers={"X-User-Login": "admin"},
     )
     body = api.expect(response, 409)
     assert body["code"] == "POINT_CLOSED"
+
+
+def test_deadline_points_of_patent_are_listed(api, patent):
+    body = api.expect(
+        api.client.get(f"/patents/{patent['patent']['id']}/deadline-points"), 200
+    )
+    assert body["patent_id"] == patent["patent"]["id"]
+    assert {point["kind"] for point in body["points"]} == {
+        "conclude_contract",
+        "send_notification",
+        "extend_patent",
+    }
+    assert body["summary"]["counts"]["open"] == 3

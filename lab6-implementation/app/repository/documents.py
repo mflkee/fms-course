@@ -1,9 +1,8 @@
-"""Репозитории документов и отчётов."""
+"""Репозиторий документов (``ХранилищеДокументов``)."""
 
 from __future__ import annotations
 
 from app.entity.documents import Document
-from app.entity.report import Report
 from app.repository.base import InMemoryRepository
 
 
@@ -15,7 +14,3 @@ class DocumentRepository(InMemoryRepository[Document]):
             lambda document: document.owner_type == owner_type
             and document.owner_id == owner_id
         )
-
-
-class ReportRepository(InMemoryRepository[Report]):
-    entity_name = "отчёт"

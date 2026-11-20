@@ -1,16 +1,17 @@
-"""Участники: иностранный гражданин, работодатель (лаб. 2)."""
+"""Участники: иностранный гражданин и работодатель (DESIGN.md, раздел 5)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
 
+from app.entity.deadline import ReminderSettings
 from app.entity.ids import new_id
 
 
 @dataclass(kw_only=True)
 class ForeignCitizen:
-    """Владелец патента, сторона трудовых отношений."""
+    """Владелец патента, сторона трудовых отношений (``ИностранныйГражданин``)."""
 
     full_name: str
     birth_date: date
@@ -22,6 +23,7 @@ class ForeignCitizen:
     email: str
     status: str = "registered"
     id: str = field(default_factory=new_id)
+    reminder_settings: ReminderSettings | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -34,7 +36,7 @@ class ForeignCitizen:
         }
 
     def to_public_dict(self) -> dict:
-        """Данные в объёме, допустимом работодателю (операция 3)."""
+        """Данные в объёме, достаточном для карточки патента."""
         return {
             "id": self.id,
             "full_name": self.full_name,
@@ -42,10 +44,17 @@ class ForeignCitizen:
             "status": self.status,
         }
 
+    def has_reminder_consent(self) -> bool:
+        return bool(
+            self.reminder_settings
+            and self.reminder_settings.consent
+            and self.reminder_settings.channels
+        )
+
 
 @dataclass(kw_only=True)
 class Employer:
-    """Организация, ИП или заказчик по ГПХ."""
+    """Организация, ИП или заказчик по ГПХ (``Работодатель``)."""
 
     name: str
     inn: str

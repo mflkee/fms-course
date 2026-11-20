@@ -1,7 +1,8 @@
-"""Репозиторий уведомлений (лаб. 5, ``РеестрУведомлений``).
+"""Репозиторий уведомлений (``РепозиторийУведомлений``, DESIGN.md, раздел 6).
 
-История по договору не удаляется (ИНВ-8): ``history_by_contract`` возвращает
-все уведомления, включая ошибочные и возвращённые.
+История по договору не удаляется: ``history_by_contract`` возвращает все
+уведомления, включая ошибочные и возвращённые, — доказательства отправки
+(DESIGN.md, раздел 1) сохраняются бессрочно.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ class NotificationRepository(InMemoryRepository[Notification]):
         history = self.history_by_contract(contract_id)
         if not history:
             return None
-        return max(history, key=lambda item: item.id)
+        return history[-1]
 
     def by_channel(self, channel: str) -> list[Notification]:
         return self.filter(lambda notification: notification.channel.value == channel)

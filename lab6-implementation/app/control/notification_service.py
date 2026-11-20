@@ -1,8 +1,8 @@
-"""Сервис уведомлений МВД (лаб. 5, ``СервисУведомлений``), операции 6 и 7.
+"""Сервис уведомлений МВД (``СервисУведомлений``), операции 6 и 7.
 
 Канал — параметр, а не отдельный класс: проект уведомления формируется один
 раз, различается только шлюз доставки. Доказательства (квитанция ЕПГУ,
-трек-номер и опись почты) сохраняются навсегда (ИНВ-8).
+трек-номер и опись почты) сохраняются навсегда (DESIGN.md, раздел 1).
 """
 
 from __future__ import annotations
@@ -10,10 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from app.control.access_service import AccessService
 from app.control.deadline_service import DeadlineService
 from app.control.invariants import (
     ensure_notification_not_before_contract,
+    ensure_notification_not_repeated,
     ensure_patent_is_current,
     notification_is_late,
 )
@@ -26,15 +26,11 @@ from app.entity.enums import (
     DocumentType,
     NotificationChannel,
     PointKind,
-    Role,
 )
 from app.entity.notification import Notification
-from app.entity.user import User
-from app.errors import ConflictError, ForbiddenError, GatewayError, ValidationFailure
-from app.gateway.base import FailurePolicy
+from app.errors import ConflictError, GatewayError, ValidationFailure
 from app.gateway.epgu import EpguGateway
 from app.gateway.post import PostGateway
-from app.repository.audit import AuditRepository
 from app.repository.catalogs import MvdOfficeRepository
 from app.repository.contracts import ContractRepository
 from app.repository.deadline_points import DeadlinePointRepository
@@ -78,10 +74,7 @@ class NotificationService:
         reminders: ReminderService,
         epgu: EpguGateway,
         post: PostGateway,
-        policy: FailurePolicy,
-        access: AccessService,
         clock: Clock,
-        audit: AuditRepository,
     ) -> None:
         self._notifications = notifications
         self._contracts = contracts
@@ -93,12 +86,9 @@ class NotificationService:
         self._reminders = reminders
         self._epgu = epgu
         self._post = post
-        self._policy = policy
-        self._access = access
         self._clock = clock
-        self._audit = audit
 
-    # --- операция 6: направить уведомление МВД ----------------------------
+    # --- операция 6: направитьУведомлениеМВД ------------------------------
     def send(
         self,
         *,
@@ -107,12 +97,8 @@ class NotificationService:
         confirmation: dict | None = None,
         allow_overdue: bool = False,
         simulate_failure: bool | None = None,
-        actor: User | None,
     ) -> NotificationSendResult:
-        self._access.require_employer_rep(actor)
-        assert actor is not None
         contract = self._contracts.require(contract_id)
-        self._ensure_side(contract, actor)
         if channel not in MVD_CHANNELS:
             raise ValidationFailure(
                 "уведомление МВД направляется через ЕПГУ или Почту России",
@@ -132,18 +118,9 @@ class NotificationService:
                 details={"contract_id": contract.id, "status": contract.status.value},
             )
 
-        history = self._notifications.history_by_contract(contract.id)
-        successful = [
-            item
-            for item in history
-            if item.status.value in {"sent", "overdue", "delivered"}
-        ]
-        if successful:
-            raise ConflictError(
-                "по договору уже направлено уведомление МВД: повторная отправка невозможна",
-                code="NOTIFICATION_ALREADY_SENT",
-                details={"notification_id": successful[-1].id},
-            )
+        ensure_notification_not_repeated(
+            self._notifications.history_by_contract(contract.id)
+        )
 
         patent = self._patents.require(contract.patent_id)
         ensure_patent_is_current(patent, "направить уведомление МВД")
@@ -193,15 +170,6 @@ class NotificationService:
             )
         except GatewayError as exc:
             notification.mark_error(exc.message)
-            self._audit.record(
-                at=self._clock.now(),
-                actor=actor.login,
-                action="send_notification_failed",
-                outcome="failure",
-                entity_type="notification",
-                entity_id=notification.id,
-                details={"gateway": channel.value, "error": exc.message},
-            )
             raise GatewayError(
                 exc.message,
                 code=exc.code,
@@ -245,21 +213,8 @@ class NotificationService:
             patent, PointKind.SEND_NOTIFICATION, send_date, late=late
         )
         self._reminders.schedule_for_patent(patent)
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor.login,
-            action="send_mvd_notification",
-            entity_type="notification",
-            entity_id=notification.id,
-            details={
-                "contract_id": contract.id,
-                "channel": channel.value,
-                "late": late,
-                "mvd_office": office.code,
-            },
-        )
         notes = [
-            "Копия договора и доказательство отправки сохранены (ИНВ-8).",
+            "Копия договора и доказательство отправки сохранены.",
             "Уведомление и доказательства хранятся бессрочно.",
         ]
         if late:
@@ -308,29 +263,16 @@ class NotificationService:
             )
         return sent_at, None, payload.get("track_number"), inventory
 
-    def _ensure_side(self, contract: Contract, actor: User) -> None:
-        if actor.role is Role.EMPLOYER_REP and getattr(actor, "employer_id", None) != contract.employer_id:
-            raise ForbiddenError(
-                "договор заключён с другим работодателем", code="FORBIDDEN"
-            )
-        if actor.role is Role.CITIZEN:
-            patent = self._patents.require(contract.patent_id)
-            self._access.ensure_citizen_owns(actor, patent.citizen_id)
-
-    # --- операция 7: зафиксировать возврат уведомления --------------------
+    # --- операция 7: зафиксироватьВозвратУведомления ----------------------
     def register_return(
         self,
         *,
         notification_id: str,
         reason: str,
         document: dict | None = None,
-        actor: User | None,
     ) -> dict:
-        self._access.require_employer_or_admin(actor)
-        assert actor is not None
         notification = self._notifications.require(notification_id)
         contract = self._contracts.require(notification.contract_id)
-        self._ensure_side(contract, actor)
         if not reason or not reason.strip():
             raise ValidationFailure(
                 "укажите причину возврата уведомления", code="RETURN_REASON_REQUIRED"
@@ -356,19 +298,12 @@ class NotificationService:
             notification.evidence_document_ids.append(saved.id)
 
         patent = self._patents.require(contract.patent_id)
-        self._deadlines.recalculate(
-            patent, reason="возврат уведомления МВД", actor=actor.login
-        )
         point = self._points.latest_by_kind(patent.id, PointKind.SEND_NOTIFICATION)
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor.login,
-            action="register_notification_return",
-            outcome="failure",
-            entity_type="notification",
-            entity_id=notification.id,
-            details={"reason": reason, "attempt": notification.attempts},
-        )
+        if point is not None:
+            # отправление вернулось: задача уведомления снова открыта
+            point.reopen(patent.employment_deadline)
+        self._deadlines.recalculate(patent, reason="возврат уведомления МВД")
+        point = self._points.latest_by_kind(patent.id, PointKind.SEND_NOTIFICATION)
         return {
             "notification": notification.to_dict(),
             "deadline_point": point.to_dict() if point else None,
@@ -380,12 +315,9 @@ class NotificationService:
         }
 
     # --- чтение -----------------------------------------------------------
-    def get(self, notification_id: str, *, actor: User | None) -> dict:
-        self._access.require_role(actor, Role.CITIZEN, Role.EMPLOYER_REP, Role.ADMIN)
-        assert actor is not None
+    def get(self, notification_id: str) -> dict:
         notification = self._notifications.require(notification_id)
         contract = self._contracts.require(notification.contract_id)
-        self._ensure_side(contract, actor)
         return {
             "notification": notification.to_dict(),
             "contract": contract.to_dict(),
@@ -395,6 +327,3 @@ class NotificationService:
                 for document in self._documents.by_owner("notification", notification.id)
             ],
         }
-
-    def failure_policy(self) -> FailurePolicy:
-        return self._policy

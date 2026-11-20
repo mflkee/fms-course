@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from decimal import Decimal
 
 import pytest
 
@@ -13,7 +12,6 @@ from app.entity.notification import Notification
 from app.errors import GatewayError
 from app.gateway.base import FailurePolicy
 from app.gateway.epgu import EpguGateway
-from app.gateway.fns import FnsGateway
 from app.gateway.post import PostGateway
 
 
@@ -74,34 +72,16 @@ def test_post_gateway_returns_track_number_and_document():
     assert document.owner_type == "notification"
 
 
-def test_fns_gateway_statuses():
-    gateway = FnsGateway(FailurePolicy())
-    common = {
-        "inn": "770123456789",
-        "period": "2026-10",
-        "amount": Decimal("6000.00"),
-        "on_date": date(2026, 10, 25),
-    }
-    assert gateway.check_payment(**common).found is True
-    not_found = gateway.check_payment(**common, simulate_status="not_found")
-    assert not_found.found is False
-    assert "не найдено" in not_found.detail
-    returned = gateway.check_payment(**common, simulate_status="returned")
-    assert returned.found is False
-    assert "возвращён" in returned.detail
-    assert gateway.confirm_absence(inn="770123456789", period="2026-11", on_date=date(2026, 10, 25)).found is False
-
-
 def test_failure_policy_reads_environment(monkeypatch):
     monkeypatch.setenv("FMS_GATEWAY_FAILURE", "epgu, post")
     policy = FailurePolicy.from_env()
     assert policy.failing == {"epgu", "post"}
     assert policy.should_fail("epgu") is True
-    assert policy.should_fail("fns") is False
+    assert policy.should_fail("post") is True
     assert policy.should_fail("epgu", override=False) is False
 
     monkeypatch.setenv("FMS_GATEWAY_FAILURE", "all")
-    assert FailurePolicy.from_env().failing == {"epgu", "post", "fns"}
+    assert FailurePolicy.from_env().failing == {"epgu", "post"}
 
     monkeypatch.setenv("FMS_GATEWAY_FAILURE", "")
     assert FailurePolicy.from_env().failing == set()

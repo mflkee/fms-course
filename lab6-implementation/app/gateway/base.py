@@ -1,15 +1,15 @@
-"""Общая часть шлюзов к внешним системам (ЕПГУ, Почта России, ФНС).
+"""Общая часть шлюзов к внешним системам (ЕПГУ, Почта России).
 
 Шлюз — единственное место, где модель соприкасается с внешним миром.
 Заглушки отвечают предсказуемо (детерминированные номера квитанций и
 трек-номеров) и умеют имитировать отказ источника:
 
-* окружение ``FMS_GATEWAY_FAILURE=epgu,post,fns`` (или ``all``) — отказ на
+* окружение ``FMS_GATEWAY_FAILURE=epgu,post`` (или ``all``) — отказ на
   уровне приложения;
 * флаг ``simulate_failure`` в запросе — отказ на уровне одного вызова.
 
 Оба режима дают ``GatewayError`` → HTTP 502; вызывающий сервис оставляет
-задачу открытой и сохраняет доказательство неудачной попытки (ИНВ-8).
+задачу открытой и сохраняет доказательство неудачной попытки.
 """
 
 from __future__ import annotations
@@ -17,11 +17,12 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 from app.errors import GatewayError
 
 GATEWAY_FAILURE_ENV = "FMS_GATEWAY_FAILURE"
+GATEWAY_NAMES = {"epgu", "post"}
 
 
 class FailurePolicy:
@@ -35,7 +36,7 @@ class FailurePolicy:
         raw = os.environ.get(variable, "")
         names = {chunk.strip().lower() for chunk in raw.split(",") if chunk.strip()}
         if {"all", "*", "1", "true", "yes"} & names:
-            names = {"epgu", "post", "fns"}
+            names = set(GATEWAY_NAMES)
         return cls(names)
 
     @property
@@ -80,18 +81,6 @@ class Receipt:
             "channel": self.channel,
             "detail": self.detail,
         }
-
-
-@dataclass(kw_only=True)
-class FnsCheckResult:
-    """Результат сверки платежа с состоянием расчётов ФНС."""
-
-    found: bool
-    detail: str
-    checked_at: date
-
-    def to_dict(self) -> dict:
-        return {"found": self.found, "detail": self.detail, "checked_at": self.checked_at.isoformat()}
 
 
 def utc_now() -> datetime:

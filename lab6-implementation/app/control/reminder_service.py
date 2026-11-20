@@ -1,32 +1,31 @@
-"""Сервис напоминаний (лаб. 5, ``СервисНапоминаний``).
+"""Сервис напоминаний (``СервисНапоминаний``), операция 8 ``настроитьНапоминания``.
 
-Напоминание существует только при контрольной точке (ИНВ-9), поэтому сервис
+Напоминание существует только при контрольной точке (ИНВ-6), поэтому сервис
 не создаёт их «напрямую»: он раскладывает моменты предупреждений
-(30/14/7/3/1 день по умолчанию) по открытым точкам. По закрытым и отменённым
-точкам напоминания не создаются, а запланированные — снимаются.
+(30/14/7/3/1 день по умолчанию) по открытым точкам. По закрытым точкам
+напоминания не создаются, а запланированные — снимаются.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from app.entity.clock import Clock
-from app.entity.deadline import DeadlinePoint, Reminder
+from app.entity.deadline import DeadlinePoint, Reminder, ReminderSettings
 from app.entity.enums import NotificationChannel, PointKind
 from app.entity.patent import Patent
-from app.entity.user import CitizenUser, ReminderSettings
+from app.entity.people import ForeignCitizen
 from app.errors import ValidationFailure
 from app.repository.deadline_points import DeadlinePointRepository, ReminderRepository
 from app.repository.patents import PatentRepository
-from app.repository.people import UserRepository
+from app.repository.people import CitizenRepository
 
 DEFAULT_DAYS = [30, 14, 7, 3, 1]
 
 POINT_TITLES = {
     PointKind.CONCLUDE_CONTRACT: "заключить договор",
     PointKind.SEND_NOTIFICATION: "направить уведомление МВД",
-    PointKind.PAY_NDFL: "уплатить авансовый платёж НДФЛ",
     PointKind.EXTEND_PATENT: "продлить патент",
     PointKind.CONTRACT_END: "окончание срока договора",
 }
@@ -44,13 +43,13 @@ class ReminderService:
         self,
         reminders: ReminderRepository,
         points: DeadlinePointRepository,
-        users: UserRepository,
+        citizens: CitizenRepository,
         patents: PatentRepository,
         clock: Clock,
     ) -> None:
         self._reminders = reminders
         self._points = points
-        self._users = users
+        self._citizens = citizens
         self._patents = patents
         self._clock = clock
 
@@ -58,7 +57,7 @@ class ReminderService:
     def configure(
         self,
         *,
-        profile: CitizenUser,
+        citizen: ForeignCitizen,
         channels: list[NotificationChannel],
         days: list[int],
         consent: bool,
@@ -83,11 +82,11 @@ class ReminderService:
             consent=consent,
             updated_at=self._clock.now(),
         )
-        profile.reminder_settings = settings
+        citizen.reminder_settings = settings
 
         created: list[Reminder] = []
         skipped_closed = 0
-        for patent in self._patents.all_by_citizen(profile.citizen_id):
+        for patent in self._patents.all_by_citizen(citizen.id):
             if not patent.is_current():
                 continue
             closed = [
@@ -113,10 +112,10 @@ class ReminderService:
 
     # --- планирование ----------------------------------------------------
     def settings_for_patent(self, patent: Patent) -> ReminderSettings | None:
-        profile = self._users.citizen_profile(patent.citizen_id)
-        if not isinstance(profile, CitizenUser) or not profile.has_reminder_consent():
+        citizen = self._citizens.find(patent.citizen_id)
+        if citizen is None or not citizen.has_reminder_consent():
             return None
-        return profile.reminder_settings
+        return citizen.reminder_settings
 
     def schedule_for_point(self, point: DeadlinePoint) -> list[Reminder]:
         patent = self._patents.find(point.patent_id)
@@ -200,12 +199,11 @@ class ReminderService:
     def escalate(self, *, point: DeadlinePoint, text: str) -> Reminder:
         """Эскалация нарушения срока (операция 10): критичное напоминание."""
         patent = self._patents.find(point.patent_id)
-        profile = (
-            self._users.citizen_profile(patent.citizen_id) if patent is not None else None
-        )
+        citizen = self._citizens.find(patent.citizen_id) if patent is not None else None
+        settings = citizen.reminder_settings if citizen is not None else None
         channel = (
-            profile.preferred_channel
-            if isinstance(profile, CitizenUser)
+            settings.channels[0]
+            if settings is not None and settings.channels
             else NotificationChannel.EMAIL
         )
         reminder = Reminder(
@@ -245,3 +243,6 @@ class ReminderService:
 
     def today(self) -> date:
         return self._clock.today()
+
+    def now(self) -> datetime:
+        return self._clock.now()

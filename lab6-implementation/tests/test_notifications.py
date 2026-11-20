@@ -49,7 +49,6 @@ def test_notification_before_contract_rejected(api, contract):
             "channel": "epgu",
             "confirmation": {"signature": "SIG", "signed_at": "2026-10-01"},
         },
-        headers={"X-User-Login": "admin"},
     )
     body = api.expect(response, 422)
     assert body["code"] == "INV-2"
@@ -67,18 +66,12 @@ def test_late_notification_requires_allow_overdue(api):
         "channel": "epgu",
         "confirmation": {"signature": "SIG"},
     }
-    blocked = api.client.post(
-        "/notifications", json=payload, headers={"X-User-Login": "admin"}
-    )
+    blocked = api.client.post("/notifications", json=payload)
     body = api.expect(blocked, 422)
     assert body["code"] == "INV-2"
     assert "allow_overdue" in body["details"]["hint"]
 
-    allowed = api.client.post(
-        "/notifications",
-        json={**payload, "allow_overdue": True},
-        headers={"X-User-Login": "admin"},
-    )
+    allowed = api.client.post("/notifications", json={**payload, "allow_overdue": True})
     result = api.expect(allowed, 201)
     assert result["late"] is True
     assert result["notification"]["status"] == "overdue"
@@ -93,7 +86,6 @@ def test_gateway_failure_is_saved_then_return_is_registered(api, contract, conta
             "confirmation": {"signature": "SIG"},
             "simulate_failure": True,
         },
-        headers={"X-User-Login": "admin"},
     )
     error = api.expect(failed, 502)
     assert error["code"] == "GATEWAY_ERROR"
@@ -105,7 +97,6 @@ def test_gateway_failure_is_saved_then_return_is_registered(api, contract, conta
     returned = api.client.post(
         f"/notifications/{notification_id}/return",
         json={"reason": "ошибка СМЭВ", "document": {"filename": "vozvrat.pdf"}},
-        headers={"X-User-Login": "admin"},
     )
     result = api.expect(returned, 200)
     assert result["notification"]["status"] == "error"
@@ -116,7 +107,7 @@ def test_gateway_failure_is_saved_then_return_is_registered(api, contract, conta
     retried = api.notify(contract["contract"]["id"])
     assert retried["notification"]["status"] == "sent"
     history = container.notifications.history_by_contract(contract["contract"]["id"])
-    assert len(history) == 2  # неудачная попытка сохранена (ИНВ-8)
+    assert len(history) == 2  # неудачная попытка сохранена как доказательство
 
 
 def test_duplicate_notification_rejected(api, notified, contract):
@@ -127,10 +118,9 @@ def test_duplicate_notification_rejected(api, notified, contract):
             "channel": "post",
             "confirmation": {"inventory": "опись"},
         },
-        headers={"X-User-Login": "admin"},
     )
     body = api.expect(response, 409)
-    assert body["code"] == "NOTIFICATION_ALREADY_SENT"
+    assert body["code"] == "INV-7"
 
 
 def test_return_of_delivered_notification_rejected(api, notified, contract, container):
@@ -140,7 +130,6 @@ def test_return_of_delivered_notification_rejected(api, notified, contract, cont
     response = api.client.post(
         f"/notifications/{notification.id}/return",
         json={"reason": "отказ адресата"},
-        headers={"X-User-Login": "admin"},
     )
     body = api.expect(response, 409)
     assert body["code"] == "NOTIFICATION_NOT_RETURNABLE"
@@ -151,21 +140,33 @@ def test_return_unknown_notification(api):
     response = api.client.post(
         "/notifications/unknown/return",
         json={"reason": "нет такого"},
-        headers={"X-User-Login": "admin"},
     )
     body = api.expect(response, 404)
     assert body["code"] == "NOT_FOUND"
 
 
-def test_employer_can_send_notification(api, contract):
-    allowed = api.client.post(
+def test_notification_channel_must_be_epgu_or_post(api, contract):
+    response = api.client.post(
         "/notifications",
-        json={
-            "contract_id": contract["contract"]["id"],
-            "channel": "epgu",
-            "confirmation": {"signature": "SIG"},
-        },
-        headers={"X-User-Login": "hr-romashka"},
+        json={"contract_id": contract["contract"]["id"], "channel": "email"},
     )
-    body = api.expect(allowed, 201)
+    body = api.expect(response, 422)
+    assert body["code"] == "NOTIFICATION_CHANNEL_INVALID"
+
+
+def test_epgu_requires_signature(api, contract):
+    response = api.client.post(
+        "/notifications",
+        json={"contract_id": contract["contract"]["id"], "channel": "epgu"},
+    )
+    body = api.expect(response, 422)
+    assert body["code"] == "EPGU_SIGNATURE_REQUIRED"
+
+
+def test_notification_card_shows_evidence(api, notified):
+    body = api.expect(
+        api.client.get(f"/notifications/{notified['notification']['id']}"), 200
+    )
     assert body["notification"]["status"] == "sent"
+    assert body["evidence"]["receipt_number"].startswith("EPGU-")
+    assert [document["type"] for document in body["documents"]] == ["receipt"]

@@ -1,8 +1,8 @@
 """Репозитории контрольных точек и напоминаний.
 
-ИНВ-9 обеспечивается структурно: точка создаётся только для существующего
-патента, напоминание — только для существующей точки. Каскад «удалили
-родителя» невозможен, потому что удаления в репозиториях нет.
+ИНВ-6 (композиция патента) обеспечивается структурно: точка создаётся только
+для существующего патента, напоминание — только для существующей точки.
+Удаления в репозиториях нет, поэтому «осиротевших» объектов не бывает.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ class DeadlinePointRepository(InMemoryRepository[DeadlinePoint]):
         if self._patents.find(item.patent_id) is None:
             raise ConflictError(
                 f"контрольная точка не может существовать без патента: {item.patent_id}",
-                code="INV-9",
+                code="INV-6",
             )
         return super().add(item)
 
@@ -48,7 +48,7 @@ class DeadlinePointRepository(InMemoryRepository[DeadlinePoint]):
         )
 
     def latest_by_kind(self, patent_id: str, kind: PointKind) -> DeadlinePoint | None:
-        points = sorted(self.by_kind(patent_id, kind), key=lambda item: item.id)
+        points = self.by_kind(patent_id, kind)
         return points[-1] if points else None
 
 
@@ -63,7 +63,7 @@ class ReminderRepository(InMemoryRepository[Reminder]):
         if self._points.find(item.point_id) is None:
             raise ConflictError(
                 f"напоминание не может существовать без контрольной точки: {item.point_id}",
-                code="INV-9",
+                code="INV-6",
             )
         return super().add(item)
 

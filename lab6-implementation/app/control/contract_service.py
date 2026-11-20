@@ -1,7 +1,7 @@
-"""Сервис договоров (лаб. 5, ``СервисДоговоров``), операции 4, 5, 14.
+"""Сервис договоров (``СервисДоговоров``), операции 4 и 5.
 
 ИНВ-1, ИНВ-3 и ИНВ-4 проверяются до создания договора. Просрочка срока
-трудоустройства не блокирует регистрацию (решение лаб. 3, п. 6.1.4): договор
+трудоустройства не блокирует регистрацию (решение лаб. 3): договор
 создаётся с признаком ``overdue``, а точка закрывается с отметкой ``late``.
 """
 
@@ -10,13 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from app.control.access_service import AccessService
 from app.control.deadline_service import DeadlineService
 from app.control.invariants import (
+    SENT_NOTIFICATION_STATUSES,
     contract_is_late,
     ensure_activity_allowed,
-    ensure_contract_allows_termination,
-    ensure_contract_is_draft,
     ensure_no_active_contract,
     ensure_patent_is_current,
 )
@@ -30,13 +28,10 @@ from app.entity.enums import (
     ContractStatus,
     DocumentType,
     PointKind,
-    Role,
     WorkMode,
 )
 from app.entity.patent import Patent
-from app.entity.user import User
-from app.errors import ConflictError, ForbiddenError, ValidationFailure
-from app.repository.audit import AuditRepository
+from app.errors import ConflictError, ValidationFailure
 from app.repository.catalogs import ActivityTypeRepository
 from app.repository.contracts import ContractRepository
 from app.repository.documents import DocumentRepository
@@ -63,26 +58,6 @@ class ContractResult:
         }
 
 
-@dataclass(kw_only=True)
-class TerminationResult:
-    contract: Contract
-    reopened_point: DeadlinePoint | None
-    notification_task: dict | None
-    history_notifications: int
-    corrected: bool
-
-    def to_dict(self) -> dict:
-        return {
-            "contract": self.contract.to_dict(),
-            "reopened_point": (
-                self.reopened_point.to_dict() if self.reopened_point else None
-            ),
-            "notification_task": self.notification_task,
-            "history_notifications": self.history_notifications,
-            "corrected": self.corrected,
-        }
-
-
 class ContractService:
     def __init__(
         self,
@@ -94,9 +69,7 @@ class ContractService:
         notifications: NotificationRepository,
         deadlines: DeadlineService,
         reminders: ReminderService,
-        access: AccessService,
         clock: Clock,
-        audit: AuditRepository,
     ) -> None:
         self._contracts = contracts
         self._patents = patents
@@ -106,11 +79,9 @@ class ContractService:
         self._notifications = notifications
         self._deadlines = deadlines
         self._reminders = reminders
-        self._access = access
         self._clock = clock
-        self._audit = audit
 
-    # --- операция 4: заключить договор ------------------------------------
+    # --- операция 4: заключитьДоговор -------------------------------------
     def conclude(
         self,
         *,
@@ -127,17 +98,7 @@ class ContractService:
         work_mode: WorkMode = WorkMode.FULL_DAY,
         subject: str | None = None,
         work_deadline: date | None = None,
-        actor: User | None,
     ) -> ContractResult:
-        self._access.require_employer_rep(actor)
-        assert actor is not None
-        if actor.role is Role.EMPLOYER_REP and actor.employer_id != employer_id:  # type: ignore[attr-defined]
-            raise ForbiddenError(
-                "представитель работодателя может заключать договоры только от своего работодателя",
-                code="FORBIDDEN",
-                details={"employer_id": employer_id},
-            )
-
         patent = self._patents.require(patent_id)
         ensure_patent_is_current(patent, "заключить договор")
         employer = self._employers.require(employer_id)
@@ -221,14 +182,6 @@ class ContractService:
             contract.document_ids.append(saved.id)
 
         if not consent_confirmed:
-            self._audit.record(
-                at=self._clock.now(),
-                actor=actor.login,
-                action="draft_contract_created",
-                entity_type="contract",
-                entity_id=contract.id,
-                details={"reason": "согласие сторон не подтверждено"},
-            )
             return ContractResult(
                 contract=contract,
                 notes=[
@@ -243,18 +196,6 @@ class ContractService:
         )
         self._deadlines.ensure_point(patent, PointKind.SEND_NOTIFICATION)
         self._reminders.schedule_for_patent(patent)
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor.login,
-            action="conclude_contract",
-            entity_type="contract",
-            entity_id=contract.id,
-            details={
-                "patent_id": patent.id,
-                "employer_id": employer.id,
-                "overdue": overdue,
-            },
-        )
         due = patent.employment_deadline.isoformat()
         notes = [f"Уведомление МВД должно быть направлено не позднее {due}."]
         if overdue:
@@ -283,29 +224,58 @@ class ContractService:
             "allowed_channels": ["epgu", "post"],
         }
 
-    # --- операция 5: отменить договор -------------------------------------
-    def cancel(self, *, contract_id: str, reason: str, actor: User | None) -> dict:
-        self._access.require_employer_or_admin(actor)
-        assert actor is not None
+    # --- операция 5: отменитьДоговор --------------------------------------
+    def cancel(self, *, contract_id: str, reason: str) -> dict:
+        """Отмена договора, по которому ещё не направлено уведомление МВД.
+
+        После отправки уведомления запись о договоре становится
+        доказательством (DESIGN.md, раздел 1) и не отменяется.
+        """
         contract = self._contracts.require(contract_id)
-        self._ensure_side(contract, actor)
-        ensure_contract_is_draft(contract)
+        if contract.status is ContractStatus.CANCELLED:
+            raise ConflictError(
+                "договор уже отменён",
+                code="CONTRACT_ALREADY_CANCELLED",
+                details={"contract_id": contract.id},
+            )
+        history = self._notifications.history_by_contract(contract.id)
+        if any(
+            item.status.value in SENT_NOTIFICATION_STATUSES for item in history
+        ):
+            raise ConflictError(
+                "по договору уже направлено уведомление МВД: отмена невозможна, "
+                "доказательства отправки сохраняются; смена работодателя — это "
+                "новый договор и новое уведомление",
+                code="CONTRACT_NOTIFICATION_SENT",
+                details={"contract_id": contract.id},
+            )
         if not reason or not reason.strip():
             raise ValidationFailure(
                 "укажите причину отмены договора", code="CANCEL_REASON_REQUIRED"
             )
+
+        was_active = contract.is_active()
         contract.cancel(reason.strip(), self._clock.today())
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor.login,
-            action="cancel_contract",
-            entity_type="contract",
-            entity_id=contract.id,
-            details={"reason": reason},
-        )
+
+        reopened: DeadlinePoint | None = None
+        patent = self._patents.find(contract.patent_id)
+        if (
+            was_active
+            and patent is not None
+            and patent.is_current()
+            and self._contracts.active_by_patent(patent.id) is None
+        ):
+            point = self._deadlines.ensure_point(patent, PointKind.CONCLUDE_CONTRACT)
+            point.reopen(patent.employment_deadline)
+            self._deadlines.recalculate(
+                patent, reason="отмена договора: срок трудоустройства продолжает идти"
+            )
+            reopened = point
+
         return {
             "contract": contract.to_dict(),
             "active_contract_created": False,
+            "reopened_point": reopened.to_dict() if reopened else None,
             "history_preserved": True,
             "deadline_point_state": "open",
             "notes": [
@@ -314,118 +284,9 @@ class ContractService:
             ],
         }
 
-    # --- операция 14: прекратить договор ----------------------------------
-    def terminate(
-        self,
-        *,
-        contract_id: str,
-        termination_date: date,
-        reason: str,
-        document: dict | None = None,
-        confirm_contradiction: bool = False,
-        actor: User | None,
-    ) -> TerminationResult:
-        self._access.require_employer_or_admin(actor)
-        assert actor is not None
-        contract = self._contracts.require(contract_id)
-        self._ensure_side(contract, actor)
-        ensure_contract_allows_termination(contract)
-        if not reason or not reason.strip():
-            raise ValidationFailure(
-                "укажите основание прекращения договора", code="TERMINATION_REASON_REQUIRED"
-            )
-        if termination_date < contract.conclusion_date:
-            raise ValidationFailure(
-                "дата прекращения не может быть раньше даты заключения договора",
-                code="TERMINATION_DATE_INVALID",
-                details={"conclusion_date": contract.conclusion_date.isoformat()},
-            )
-
-        history = self._notifications.history_by_contract(contract.id)
-        last_notification = self._notifications.by_contract(contract.id)
-        corrected = False
-        if (
-            last_notification is not None
-            and last_notification.send_date is not None
-            and termination_date < last_notification.send_date
-        ):
-            if not confirm_contradiction:
-                raise ConflictError(
-                    "дата прекращения раньше уже направленного уведомления МВД: "
-                    "требуется подтверждение (confirm_contradiction=true)",
-                    code="TERMINATION_CONTRADICTS_NOTIFICATION",
-                    details={
-                        "notification_id": last_notification.id,
-                        "notification_date": last_notification.send_date.isoformat(),
-                    },
-                )
-            corrected = True
-
-        contract.terminate(
-            termination_date, reason.strip(), corrected=corrected
-        )
-        if document is not None and document.get("filename"):
-            saved = Document.create(
-                doc_type=DocumentType.AGREEMENT,
-                filename=document["filename"],
-                owner_type="contract",
-                owner_id=contract.id,
-                content_hash=document.get("hash"),
-                source=document.get("source", "manual_upload"),
-            )
-            self._documents.add(saved)
-            contract.document_ids.append(saved.id)
-
-        patent = self._patents.require(contract.patent_id)
-        reopened: DeadlinePoint | None = None
-        if patent.is_current() and self._contracts.active_by_patent(patent.id) is None:
-            point = self._deadlines.ensure_point(patent, PointKind.CONCLUDE_CONTRACT)
-            point.reopen(patent.employment_deadline)
-            self._deadlines.recalculate(
-                patent, reason="прекращение договора: открыта задача трудоустройства",
-                actor=actor.login,
-            )
-            reopened = point
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor.login,
-            action="terminate_contract",
-            entity_type="contract",
-            entity_id=contract.id,
-            details={
-                "reason": reason,
-                "termination_date": termination_date.isoformat(),
-                "corrected": corrected,
-            },
-        )
-        return TerminationResult(
-            contract=contract,
-            reopened_point=reopened,
-            notification_task={
-                "contract_id": contract.id,
-                "action": "send_termination_notification",
-                "reason": reason,
-                "allowed_channels": ["epgu", "post"],
-            },
-            history_notifications=len(history),
-            corrected=corrected,
-        )
-
-    def _ensure_side(self, contract: Contract, actor: User) -> None:
-        if actor.role is Role.EMPLOYER_REP and getattr(actor, "employer_id", None) != contract.employer_id:
-            raise ForbiddenError(
-                "договор заключён с другим работодателем", code="FORBIDDEN"
-            )
-        if actor.role is Role.CITIZEN:
-            patent = self._patents.require(contract.patent_id)
-            self._access.ensure_citizen_owns(actor, patent.citizen_id)
-
     # --- чтение -----------------------------------------------------------
-    def get(self, contract_id: str, *, actor: User | None) -> dict:
-        self._access.require_role(actor, Role.CITIZEN, Role.EMPLOYER_REP, Role.ADMIN)
-        assert actor is not None
+    def get(self, contract_id: str) -> dict:
         contract = self._contracts.require(contract_id)
-        self._ensure_side(contract, actor)
         notifications = self._notifications.history_by_contract(contract.id)
         return {
             "contract": contract.to_dict(),

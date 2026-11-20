@@ -1,8 +1,12 @@
-"""Контрольная точка и напоминание (лаб. 2, классы ``КонтрольнаяТочка``, ``Напоминание``).
+"""Контрольная точка, напоминание и настройки напоминаний.
 
-ИНВ-9: точка не существует без патента, напоминание — без точки. Это
+DESIGN.md, раздел 5: ``КонтрольнаяТочка`` и ``Напоминание``. Настройки
+напоминаний — не отдельный класс модели, а параметр операции
+``настроитьНапоминания``, поэтому живут рядом с напоминанием.
+
+ИНВ-6: точка не существует без патента, напоминание — без точки. Это
 обеспечивается репозиториями (создание только с существующим родителем) и
-каскадной отменой при архивации/прекращении патента.
+каскадной отменой при архивации патента.
 """
 
 from __future__ import annotations
@@ -85,6 +89,24 @@ class DeadlinePoint:
                 self.violation_date.isoformat() if self.violation_date else None
             ),
             "cancel_reason": self.cancel_reason,
+        }
+
+
+@dataclass(kw_only=True)
+class ReminderSettings:
+    """Параметры операции ``настроитьНапоминания`` (каналы, за сколько дней)."""
+
+    channels: list[NotificationChannel]
+    days: list[int]
+    consent: bool
+    updated_at: datetime | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "channels": [channel.value for channel in self.channels],
+            "days": list(self.days),
+            "consent": self.consent,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

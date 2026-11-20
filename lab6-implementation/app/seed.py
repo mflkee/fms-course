@@ -1,8 +1,8 @@
-"""Демонстрационные справочники и учётные записи.
+"""Демонстрационные справочники и участники.
 
 Данные нужны, чтобы приложение запускалось «из коробки» и демо-сценарий из
 README проходил подряд. В промышленной системе справочники приходят из
-внешних источников, а пользователи — из IdP.
+внешних источников.
 """
 
 from __future__ import annotations
@@ -11,15 +11,13 @@ from datetime import date
 
 from app.container import Container
 from app.entity.catalogs import ActivityType, MvdOffice, Region
-from app.entity.enums import NotificationChannel, OrganizationType
-from app.entity.money import money
+from app.entity.enums import OrganizationType
 from app.entity.people import Employer, ForeignCitizen
-from app.entity.user import CitizenUser, EmployerRepresentative, SystemAdministrator
 
 REGIONS = [
-    ("72", "Тюменская область", "6000.00", date(2026, 1, 1)),
-    ("77", "Москва", "9000.00", date(2026, 1, 1)),
-    ("66", "Свердловская область", "7000.00", date(2026, 1, 1)),
+    ("72", "Тюменская область"),
+    ("77", "Москва"),
+    ("66", "Свердловская область"),
 ]
 
 ACTIVITIES = [
@@ -36,16 +34,28 @@ MVD_OFFICES = [
     ("66-001", "УВМ ГУ МВД России по Свердловской области", "г. Екатеринбург, ул. Ленина, 68", "66"),
 ]
 
-DEMO_CITIZEN = {
-    "full_name": "Петров Иван Сергеевич",
-    "birth_date": date(1994, 5, 17),
-    "citizenship": "Узбекистан",
-    "identity_document": "AA 1234567",
-    "inn": "770123456789",
-    "address": "г. Тюмень, ул. Республики, 10",
-    "phone": "+7 900 000-00-01",
-    "email": "petrov@example.com",
-}
+DEMO_CITIZENS = [
+    {
+        "full_name": "Петров Иван Сергеевич",
+        "birth_date": date(1994, 5, 17),
+        "citizenship": "Узбекистан",
+        "identity_document": "AA 1234567",
+        "inn": "770123456789",
+        "address": "г. Тюмень, ул. Республики, 10",
+        "phone": "+7 900 000-00-01",
+        "email": "petrov@example.com",
+    },
+    {
+        "full_name": "Ахмедов Рустам Бахтиёрович",
+        "birth_date": date(1990, 2, 3),
+        "citizenship": "Таджикистан",
+        "identity_document": "AB 7654321",
+        "inn": "770987654321",
+        "address": "г. Тюмень, ул. Пермякова, 5",
+        "phone": "+7 900 000-00-02",
+        "email": "ahmedov@example.com",
+    },
+]
 
 DEMO_EMPLOYER = {
     "name": "ООО «Ромашка»",
@@ -56,20 +66,11 @@ DEMO_EMPLOYER = {
     "contact_person": "Сидорова Анна Петровна",
 }
 
-DEMO_LOGINS = {
-    "admin": "admin",
-    "auditor": "auditor",
-    "employer": "hr-romashka",
-    "citizen": "ig-petrov",
-}
-
 
 def seed_demo_data(container: Container) -> Container:
-    """Наполнить контейнер справочниками, демо-гражданином и учётными записями."""
-    for code, name, cost, actual in REGIONS:
-        container.regions.add(
-            Region(code=code, name=name, patent_cost=money(cost), actual_date=actual)
-        )
+    """Наполнить контейнер справочниками, демо-гражданином и работодателем."""
+    for code, name in REGIONS:
+        container.regions.add(Region(code=code, name=name))
     for code, name, allowed in ACTIVITIES:
         container.activities.add(
             ActivityType(code=code, name=name, allowed_for_patent=allowed)
@@ -79,41 +80,7 @@ def seed_demo_data(container: Container) -> Container:
             MvdOffice(code=code, name=name, address=address, region_code=region_code)
         )
 
-    citizen = ForeignCitizen(**DEMO_CITIZEN)
-    container.citizens.add(citizen)
-    employer = Employer(**DEMO_EMPLOYER)
-    container.employers.add(employer)
-
-    container.users.add(
-        CitizenUser(
-            login=DEMO_LOGINS["citizen"],
-            contact=DEMO_CITIZEN["email"],
-            citizen_id=citizen.id,
-            preferred_channel=NotificationChannel.EMAIL,
-        )
-    )
-    container.users.add(
-        EmployerRepresentative(
-            login=DEMO_LOGINS["employer"],
-            contact="hr@romashka.example",
-            employer_id=employer.id,
-            position="Инспектор по кадрам",
-        )
-    )
-    container.users.add(
-        SystemAdministrator(
-            login=DEMO_LOGINS["admin"],
-            contact="admin@fms.example",
-            export_right=True,
-            personal_data_right=True,
-        )
-    )
-    container.users.add(
-        SystemAdministrator(
-            login=DEMO_LOGINS["auditor"],
-            contact="auditor@fms.example",
-            export_right=True,
-            personal_data_right=False,
-        )
-    )
+    container.citizens.add(ForeignCitizen(**DEMO_CITIZENS[0]))
+    container.citizens.add(ForeignCitizen(**DEMO_CITIZENS[1]))
+    container.employers.add(Employer(**DEMO_EMPLOYER))
     return container

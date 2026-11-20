@@ -1,44 +1,83 @@
-"""Служебные эндпоинты, права доступа и планировщик."""
+"""Служебные эндпоинты, справочники и полнота набора операций."""
 
 from __future__ import annotations
 
 from app.container import Container
 
+TEN_OPERATIONS = {
+    ("post", "/patents"),
+    ("post", "/patents/{patent_id}/archive"),
+    ("get", "/patents/{patent_id}"),
+    ("post", "/contracts"),
+    ("post", "/contracts/{contract_id}/cancel"),
+    ("post", "/notifications"),
+    ("post", "/notifications/{notification_id}/return"),
+    ("put", "/reminder-settings"),
+    ("post", "/patents/{patent_id}/recalculate"),
+    ("post", "/deadline-points/{point_id}/violation"),
+}
 
-def test_health_reports_zero_state(client):
+AUXILIARY_ROUTES = {
+    ("get", "/health"),
+    ("get", "/catalog/regions"),
+    ("get", "/catalog/activities"),
+    ("get", "/catalog/offices"),
+    ("get", "/catalog/citizens"),
+    ("get", "/catalog/employers"),
+    ("get", "/patents/by-requisites"),
+    ("get", "/patents/{patent_id}/deadline-points"),
+    ("get", "/contracts/{contract_id}"),
+    ("get", "/notifications/{notification_id}"),
+}
+
+
+def test_health_starts_empty(client):
     body = client.get("/health").json()
     assert body["status"] == "ok"
     assert body["today"] == "2026-10-25"
-    assert body["counts"]["patents"] == 0
+    assert body["counts"] == {
+        "patents": 0,
+        "contracts": 0,
+        "notifications": 0,
+        "deadline_points": 0,
+        "reminders": 0,
+    }
     assert body["gateways_failing"] == []
 
 
 def test_catalogs_are_available(client):
     regions = client.get("/catalog/regions").json()
     activities = client.get("/catalog/activities").json()
+    offices = client.get("/catalog/offices").json()
     assert {region["code"] for region in regions} == {"72", "77", "66"}
-    assert regions[0]["patent_cost"] == "6000.00"
     assert {activity["code"] for activity in activities} >= {"driver", "cook", "teacher"}
+    assert {office["code"] for office in offices} == {"72-001", "77-001", "66-001"}
 
 
-def test_users_are_visible_only_to_admin(client):
-    as_admin = client.get("/users", headers={"X-User-Login": "admin"})
-    assert as_admin.status_code == 200
-    logins = {user["login"] for user in as_admin.json()}
-    assert logins == {"admin", "auditor", "hr-romashka", "ig-petrov"}
-
-    as_employer = client.get("/users", headers={"X-User-Login": "hr-romashka"})
-    assert as_employer.status_code == 403
+def test_demo_participants_are_available(client):
+    citizens = client.get("/catalog/citizens").json()
+    employers = client.get("/catalog/employers").json()
+    assert "Петров Иван Сергеевич" in [citizen["full_name"] for citizen in citizens]
+    assert all("inn" not in citizen for citizen in citizens)
+    assert [employer["name"] for employer in employers] == ["ООО «Ромашка»"]
 
 
-def test_unknown_login_is_rejected(client):
-    response = client.get("/patents/whatever", headers={"X-User-Login": "nobody"})
-    assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHENTICATED"
+def test_openapi_lists_exactly_ten_operations(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    available = {
+        (method, path)
+        for path, operations in paths.items()
+        for method in operations
+        if method in {"get", "post", "put", "patch", "delete"}
+    }
+    assert TEN_OPERATIONS <= available
+
+    # кроме десяти операций — только служебные чтения
+    assert available - TEN_OPERATIONS == AUXILIARY_ROUTES
 
 
-def test_audit_log_contains_operations(client, container: Container):
-    client.post(
+def test_failed_gateway_returns_502_and_keeps_task(client, container: Container):
+    patent = client.post(
         "/patents",
         json={
             "citizen_id": container.citizens.all()[0].id,
@@ -49,78 +88,32 @@ def test_audit_log_contains_operations(client, container: Container):
             "activity_codes": ["driver"],
             "issuing_authority": "УВМ",
         },
-        headers={"X-User-Login": "admin"},
-    )
-    events = client.get("/audit-events", headers={"X-User-Login": "admin"}).json()
-    assert events
-    assert any(event["action"] == "register_patent" for event in events)
-
-
-def test_scheduler_runs_daily_control(client, container: Container):
-    created = client.post(
-        "/patents",
-        json={
-            "citizen_id": container.citizens.all()[0].id,
-            "series": "72 26",
-            "number": "960002",
-            "issue_date": "2026-07-01",
-            "region_code": "72",
-            "activity_codes": ["driver"],
-            "issuing_authority": "УВМ",
-        },
-        headers={"X-User-Login": "admin"},
     ).json()
-    patent_id = created["patent"]["id"]
-
-    response = client.post("/scheduler/daily-run", headers={"X-User-Login": "admin"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["processed_patents"] == 1
-    assert body["recalculated"] == [patent_id]
-    assert body["patents_with_unpaid_period"]
-
-
-def test_default_user_is_admin(client, container: Container):
-    response = client.post(
-        "/patents",
+    contract = client.post(
+        "/contracts",
         json={
-            "citizen_id": container.citizens.all()[0].id,
-            "series": "72 26",
-            "number": "960003",
-            "issue_date": "2026-10-01",
-            "region_code": "72",
-            "activity_codes": ["driver"],
-            "issuing_authority": "УВМ",
+            "patent_id": patent["patent"]["id"],
+            "employer_id": container.employers.all()[0].id,
+            "activity_code": "driver",
+            "conclusion_date": "2026-10-05",
+            "kind": "employment",
+            "position": "Водитель",
+            "document": {"filename": "dogovor.pdf"},
+        },
+    ).json()
+
+    response = client.post(
+        "/notifications",
+        json={
+            "contract_id": contract["contract"]["id"],
+            "channel": "epgu",
+            "confirmation": {"signature": "SIG"},
+            "simulate_failure": True,
         },
     )
-    assert response.status_code == 201
-
-
-def test_openapi_lists_all_sixteen_operations(client):
-    paths = client.get("/openapi.json").json()["paths"]
-    expected = {
-        ("post", "/patents"),
-        ("post", "/patents/{patent_id}/archive"),
-        ("get", "/patents/{patent_id}"),
-        ("post", "/contracts"),
-        ("post", "/contracts/{contract_id}/cancel"),
-        ("post", "/notifications"),
-        ("post", "/notifications/{notification_id}/return"),
-        ("put", "/reminder-settings"),
-        ("post", "/patents/{patent_id}/recalculate"),
-        ("post", "/deadline-points/{point_id}/violation"),
-        ("post", "/payments"),
-        ("post", "/payments/{payment_id}/confirm"),
-        ("post", "/patents/{patent_id}/terminate-nonpayment"),
-        ("post", "/contracts/{contract_id}/terminate"),
-        ("get", "/reports"),
-        ("get", "/reports/{report_id}/export"),
-    }
-    available = {
-        (method, path)
-        for path, operations in paths.items()
-        for method in operations
-        if method in {"get", "post", "put", "patch", "delete"}
-    }
-    assert expected <= available
-    assert len(expected) == 16
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == "GATEWAY_ERROR"
+    assert body["details"]["gateway"] == "epgu"
+    assert body["details"]["notification_status"] == "error"
+    assert body["details"]["next_operation"] == "POST /notifications/{id}/return"

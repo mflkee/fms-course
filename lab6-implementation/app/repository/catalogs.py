@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
-
 from app.entity.catalogs import ActivityType, MvdOffice, Region
 from app.errors import NotFoundError, ValidationFailure
 from app.repository.base import InMemoryRepository
@@ -28,16 +25,9 @@ class RegionRepository(InMemoryRepository[Region]):
         region = self.by_code(code)
         if region is None:
             raise ValidationFailure(
-                f"регион не найден в справочнике: {code}", code="INV-4"
+                f"регион не найден в справочнике: {code}", code="REGION_NOT_FOUND"
             )
         return region
-
-    def cost_on(self, code: str, on_date: date) -> Decimal:
-        region = self.require_code(code)
-        try:
-            return region.cost_on(on_date)
-        except ValueError as exc:
-            raise ValidationFailure(str(exc), code="STALE_CATALOG") from exc
 
 
 class ActivityTypeRepository(InMemoryRepository[ActivityType]):

@@ -1,7 +1,7 @@
 """Ошибки уровня приложения и их отображение в HTTP.
 
 Предметные ошибки не знают про HTTP-коды «изнутри»: сервис бросает
-``ConflictError``/``ValidationError``, а слой boundary превращает их в 409/422.
+``ConflictError``/``ValidationFailure``, а слой boundary превращает их в 409/422.
 Так модель остаётся независимой от веб-фреймворка.
 """
 
@@ -57,29 +57,8 @@ class NotFoundError(DomainError):
     code = "NOT_FOUND"
 
 
-class ForbiddenError(DomainError):
-    """Нет прав на операцию (403)."""
-
-    status_code = 403
-    code = "FORBIDDEN"
-
-
-class AuthenticationError(DomainError):
-    """Учётная запись не найдена или неактивна (401)."""
-
-    status_code = 401
-    code = "UNAUTHENTICATED"
-
-
 class GatewayError(DomainError):
-    """Внешняя система (ЕПГУ, Почта, ФНС) вернула ошибку (502)."""
+    """Внешняя система (ЕПГУ, Почта) вернула ошибку (502)."""
 
     status_code = 502
     code = "GATEWAY_ERROR"
-
-
-class EmptySelectionError(DomainError):
-    """Выборка для отчёта пуста — отчёт не формируется (404 по контракту лаб. 3)."""
-
-    status_code = 404
-    code = "EMPTY_SELECTION"

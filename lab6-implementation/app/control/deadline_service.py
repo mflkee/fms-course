@@ -1,8 +1,8 @@
-"""Модуль контроля сроков (лаб. 5, ``МодульКонтроляСроков``), операции 9 и 10.
+"""Модуль контроля сроков (``СервисСроков``), операции 9 и 10.
 
 Здесь в одном месте живёт правило «2 месяца с даты выдачи патента» и все
-производные сроки. Сервисы патентов, договоров, уведомлений и НДФЛ не
-дублируют расчёт — они вызывают этот модуль (как и записано в лаб. 5).
+производные сроки. Сервисы патентов, договоров и уведомлений не дублируют
+расчёт — они вызывают этот модуль.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from app.entity.deadline import DeadlinePoint, Reminder
 from app.entity.enums import PointKind, PointStatus
 from app.entity.patent import Patent
 from app.errors import ConflictError, ValidationFailure
-from app.repository.audit import AuditRepository
 from app.repository.contracts import ContractRepository
 from app.repository.deadline_points import DeadlinePointRepository
 from app.repository.patents import PatentRepository
@@ -57,21 +56,17 @@ class DeadlineService:
         contracts: ContractRepository,
         reminders: ReminderService,
         clock: Clock,
-        audit: AuditRepository,
     ) -> None:
         self._points = points
         self._patents = patents
         self._contracts = contracts
         self._reminders = reminders
         self._clock = clock
-        self._audit = audit
 
     # --- расчёт плановых дат ---------------------------------------------
     def planned_date_for(self, patent: Patent, kind: PointKind) -> date:
         if kind in {PointKind.CONCLUDE_CONTRACT, PointKind.SEND_NOTIFICATION}:
             return patent.employment_deadline
-        if kind is PointKind.PAY_NDFL:
-            return patent.first_payment_due_date()
         if kind is PointKind.EXTEND_PATENT:
             return patent.valid_until - timedelta(days=EXTEND_POINT_LEAD_DAYS)
         if kind is PointKind.CONTRACT_END:
@@ -80,11 +75,10 @@ class DeadlineService:
         raise ValidationFailure(f"неизвестный вид контрольной точки: {kind}", code="POINT_KIND")
 
     def create_patent_points(self, patent: Patent) -> list[DeadlinePoint]:
-        """Комплект точек при регистрации патента: минимум две (ИНВ-9)."""
+        """Комплект точек при регистрации патента: договор, уведомление, продление."""
         kinds = [
             PointKind.CONCLUDE_CONTRACT,
             PointKind.SEND_NOTIFICATION,
-            PointKind.PAY_NDFL,
             PointKind.EXTEND_PATENT,
         ]
         points: list[DeadlinePoint] = []
@@ -146,9 +140,9 @@ class DeadlineService:
                 cancelled += 1
         return cancelled
 
-    # --- операция 9: пересчёт сроков --------------------------------------
+    # --- операция 9: пересчитатьСрокиПатента ------------------------------
     def recalculate(
-        self, patent: Patent, *, reason: str = "плановый пересчёт", actor: str = "scheduler"
+        self, patent: Patent, *, reason: str = "плановый пересчёт"
     ) -> DeadlineSummary:
         today = self._clock.today()
         for point in self._points.by_patent(patent.id):
@@ -164,14 +158,6 @@ class DeadlineService:
                 point.status = PointStatus.OPEN
                 point.critical = False
         self._reminders.reschedule_for_patent(patent)
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor,
-            action="recalculate_deadlines",
-            entity_type="patent",
-            entity_id=patent.id,
-            details={"reason": reason},
-        )
         return self.summary(patent)
 
     def summary(self, patent: Patent) -> DeadlineSummary:
@@ -210,9 +196,9 @@ class DeadlineService:
             if point.planned_date < self._clock.today()
         ]
 
-    # --- операция 10: фиксация нарушения ---------------------------------
+    # --- операция 10: зафиксироватьНарушениеСрока -------------------------
     def register_violation(
-        self, point_id: str, detected_at: date, *, actor: str
+        self, point_id: str, detected_at: date
     ) -> tuple[DeadlinePoint, Reminder]:
         if detected_at > self._clock.today():
             raise ValidationFailure(
@@ -247,14 +233,6 @@ class DeadlineService:
                 f"{point.planned_date.isoformat()}, нарушение зафиксировано "
                 f"{detected_at.isoformat()}. Риск аннулирования патента."
             ),
-        )
-        self._audit.record(
-            at=self._clock.now(),
-            actor=actor,
-            action="register_deadline_violation",
-            entity_type="deadline_point",
-            entity_id=point.id,
-            details={"detected_at": detected_at.isoformat()},
         )
         return point, reminder
 
