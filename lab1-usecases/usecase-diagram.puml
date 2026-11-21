@@ -1,8 +1,9 @@
 @startuml usecase-diagram
 ' Лаб. 1: диаграмма прецедентов. Один актор, два прецедента.
-' Граница системы: система только собирает анкету и показывает дорожную карту.
+' Границу системы не рисуем: прецедентов вне системы нет.
 skinparam defaultFontName "DejaVu Sans"
 skinparam shadowing false
+skinparam defaultFontSize 18
 skinparam usecase {
   BackgroundColor #F4F8FF
   BorderColor #4A6FA5
@@ -10,10 +11,8 @@ skinparam usecase {
 
 actor "Иностранный\nгражданин" as IG
 
-rectangle "Система «Дорожная карта»" {
-  usecase "П1. Заполнить анкету" as P1
-  usecase "П2. Просмотреть\nдорожную карту" as P2
-}
+usecase "П1. Заполнение анкеты" as P1
+usecase "П2. Просмотр\nдорожной карты" as P2
 
 IG --> P1
 IG --> P2
